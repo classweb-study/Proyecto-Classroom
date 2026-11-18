@@ -63,7 +63,6 @@ try {
     githubAuth,
     frontendOrigin,
     secureCookies,
-    defaultInstitutionSlug: 'unisabana',
   });
 
   const close = async () => {

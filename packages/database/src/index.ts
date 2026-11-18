@@ -12,7 +12,13 @@ export {
 } from './auth.js';
 export {
   createInstitutionAccessRepository,
-  type AccessRequestEnsureResult,
+  type AccessRequestRole,
+  type AccessRequestStatus,
+  type CancelAccessRequestResult,
+  type InstitutionSummary,
+  type MyAccessRequest,
+  type SubmitAccessRequestInput,
+  type SubmitAccessRequestResult,
 } from './access.js';
 
 export {

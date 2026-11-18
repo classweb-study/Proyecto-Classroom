@@ -37,7 +37,38 @@ export interface AppDependencies {
   githubAuth: GitHubAuth;
   frontendOrigin: string;
   secureCookies: boolean;
-  defaultInstitutionSlug: string;
+}
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function boundedText(
+  value: unknown,
+  min: number,
+  max: number,
+): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+
+  return trimmed.length >= min && trimmed.length <= max
+    ? trimmed
+    : null;
+}
+
+function validEmail(value: unknown): string | null {
+  const email = boundedText(value, 3, 254);
+
+  return email && EMAIL_PATTERN.test(email)
+    ? email.toLowerCase()
+    : null;
+}
+
+function isAccessRole(
+  value: unknown,
+): value is 'TEACHER' | 'STUDENT' {
+  return value === 'TEACHER' || value === 'STUDENT';
 }
 
 function validUuid(value: string | undefined): value is string {
@@ -91,10 +122,17 @@ export function createApp(dependencies?: AppDependencies) {
     admin,
     githubAuth,
     secureCookies,
-    defaultInstitutionSlug,
   } = dependencies;
 
   const frontendOrigin = normalizeOrigin(dependencies.frontendOrigin);
+
+  async function sessionUser(cookieHeader: string | undefined) {
+    const secret = readCookie(cookieHeader, SESSION_COOKIE);
+
+    return validOpaqueToken(secret)
+      ? auth.findSession(secret)
+      : null;
+  }
 
   app.setErrorHandler((error, _request, reply) => {
     if (
@@ -234,19 +272,6 @@ export function createApp(dependencies?: AppDependencies) {
       avatarUrl: identity.avatarUrl,
     });
 
-    const accessResult = await access.ensurePendingRequest(
-      user.userId,
-      defaultInstitutionSlug,
-    );
-
-    if (accessResult === 'INSTITUTION_NOT_FOUND') {
-      reply.header('set-cookie', clearOAuth);
-
-      return reply.code(503).send({
-        error: 'INSTITUTION_UNAVAILABLE',
-      });
-    }
-
     const session = await auth.createSession(user.userId);
 
     reply.header('set-cookie', [
@@ -298,11 +323,6 @@ export function createApp(dependencies?: AppDependencies) {
       user.userId,
     );
 
-    const accessRequest = await access.findAccessRequest(
-      user.userId,
-      defaultInstitutionSlug,
-    );
-
     /*
      * BigInt is deliberately converted to a string at the HTTP boundary.
      * GitHub login is presentation data, not the stable external key.
@@ -317,10 +337,187 @@ export function createApp(dependencies?: AppDependencies) {
         },
         academicIdentity: null,
         institutions,
-        accessRequest,
       },
     };
   });
+
+  app.get<{
+    Querystring: {
+      q?: string;
+    };
+  }>('/institutions', async (request, reply) => {
+    const user = await sessionUser(request.headers.cookie);
+
+    if (!user) {
+      return reply.code(401).send({
+        error: 'UNAUTHENTICATED',
+      });
+    }
+
+    const query = request.query.q ?? '';
+
+    if (typeof query !== 'string' || query.length > 100) {
+      return reply.code(400).send({
+        error: 'INVALID_QUERY',
+      });
+    }
+
+    return {
+      institutions: await access.searchInstitutions(
+        query.trim(),
+      ),
+    };
+  });
+
+  app.get('/me/access-requests', async (request, reply) => {
+    const user = await sessionUser(request.headers.cookie);
+
+    if (!user) {
+      return reply.code(401).send({
+        error: 'UNAUTHENTICATED',
+      });
+    }
+
+    return {
+      requests: await access.listMyAccessRequests(user.userId),
+    };
+  });
+
+  app.post<{
+    Body: Record<string, unknown> | undefined;
+  }>('/me/access-requests', async (request, reply) => {
+    if (!validOrigin(request.headers.origin, frontendOrigin)) {
+      return reply.code(403).send({
+        error: 'ORIGIN_FORBIDDEN',
+      });
+    }
+
+    const user = await sessionUser(request.headers.cookie);
+
+    if (!user) {
+      return reply.code(401).send({
+        error: 'UNAUTHENTICATED',
+      });
+    }
+
+    const body = request.body ?? {};
+    const institutionId = body.institutionId;
+    const requestedRole = body.requestedRole;
+    const fullName = boundedText(body.fullName, 2, 120);
+    const contactEmail = validEmail(body.contactEmail);
+    const requestReason = boundedText(body.requestReason, 1, 1000);
+
+    const rawInstitutionalEmail = body.institutionalEmail;
+    const institutionalEmail =
+      rawInstitutionalEmail === undefined ||
+      rawInstitutionalEmail === null ||
+      rawInstitutionalEmail === ''
+        ? null
+        : validEmail(rawInstitutionalEmail);
+
+    const rawInstitutionalCode = body.institutionalCode;
+    const institutionalCode =
+      rawInstitutionalCode === undefined ||
+      rawInstitutionalCode === null ||
+      rawInstitutionalCode === ''
+        ? null
+        : boundedText(rawInstitutionalCode, 1, 40);
+
+    if (
+      typeof institutionId !== 'string' ||
+      !validUuid(institutionId) ||
+      !isAccessRole(requestedRole) ||
+      !fullName ||
+      !contactEmail ||
+      !requestReason ||
+      (rawInstitutionalEmail && !institutionalEmail) ||
+      (rawInstitutionalCode && !institutionalCode)
+    ) {
+      return reply.code(400).send({
+        error: 'INVALID_ACCESS_REQUEST',
+      });
+    }
+
+    const result = await access.submitAccessRequest({
+      userId: user.userId,
+      institutionId,
+      requestedRole,
+      fullName,
+      contactEmail,
+      institutionalEmail,
+      institutionalCode,
+      requestReason,
+    });
+
+    switch (result.status) {
+      case 'INSTITUTION_NOT_FOUND':
+        return reply.code(404).send({
+          error: 'INSTITUTION_NOT_FOUND',
+        });
+      case 'ALREADY_MEMBER':
+        return reply.code(409).send({
+          error: 'ALREADY_MEMBER',
+        });
+      case 'PENDING_EXISTS':
+        return reply.code(409).send({
+          error: 'ACCESS_REQUEST_PENDING_EXISTS',
+        });
+      case 'CREATED':
+        return reply.code(201).send({
+          requestId: result.requestId,
+        });
+    }
+  });
+
+  app.post<{
+    Params: {
+      requestId: string;
+    };
+  }>(
+    '/me/access-requests/:requestId/cancel',
+    async (request, reply) => {
+      if (!validOrigin(request.headers.origin, frontendOrigin)) {
+        return reply.code(403).send({
+          error: 'ORIGIN_FORBIDDEN',
+        });
+      }
+
+      const { requestId } = request.params;
+
+      if (!validUuid(requestId)) {
+        return reply.code(400).send({
+          error: 'INVALID_REQUEST',
+        });
+      }
+
+      const user = await sessionUser(request.headers.cookie);
+
+      if (!user) {
+        return reply.code(401).send({
+          error: 'UNAUTHENTICATED',
+        });
+      }
+
+      const result = await access.cancelAccessRequest(
+        user.userId,
+        requestId,
+      );
+
+      if (result.status === 'NOT_FOUND') {
+        return reply.code(404).send({
+          error: 'ACCESS_REQUEST_NOT_FOUND',
+        });
+      }
+
+      if (result.status === 'ALREADY_DECIDED') {
+        return reply.code(409).send({
+          error: 'ACCESS_REQUEST_ALREADY_DECIDED',
+        });
+      }
+
+      return { status: 'CANCELLED' };
+    },
+  );
 
   app.get<{
     Params: {
@@ -531,6 +728,9 @@ export function createApp(dependencies?: AppDependencies) {
       institutionId: string;
       requestId: string;
     };
+    Body: {
+      reason?: unknown;
+    };
   }>(
     '/admin/institutions/:institutionId/access-requests/:requestId/deny',
     async (request, reply) => {
@@ -553,6 +753,14 @@ export function createApp(dependencies?: AppDependencies) {
       ) {
         return reply.code(400).send({
           error: 'INVALID_REQUEST',
+        });
+      }
+
+      const reason = boundedText(request.body?.reason, 1, 500);
+
+      if (!reason) {
+        return reply.code(400).send({
+          error: 'DENIAL_REASON_REQUIRED',
         });
       }
 
@@ -579,6 +787,7 @@ export function createApp(dependencies?: AppDependencies) {
         actorUserId: user.userId,
         institutionId,
         requestId,
+        reason,
       });
 
       if (result.status === 'FORBIDDEN') {

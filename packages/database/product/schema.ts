@@ -29,12 +29,17 @@ export const institutionMembershipStatusEnum = pgEnum(
 
 export const institutionAccessRequestStatusEnum = pgEnum(
   'institution_access_request_status',
-  ['PENDING', 'APPROVED', 'DENIED'],
+  ['PENDING', 'APPROVED', 'DENIED', 'CANCELLED'],
 );
 
 export const institutionAccessRoleEnum = pgEnum(
   'institution_access_role',
   ['TEACHER', 'STUDENT'],
+);
+
+export const accessRequestEventActionEnum = pgEnum(
+  'access_request_event_action',
+  ['SUBMITTED', 'APPROVED', 'DENIED', 'CANCELLED'],
 );
 
 export const users = pgTable('users', {
@@ -234,6 +239,15 @@ export const institutionAccessRequests = pgTable(
 
     assignedRole: institutionAccessRoleEnum('assigned_role'),
 
+    // Nullable only because rows created before the request form have no data.
+    requestedRole: institutionAccessRoleEnum('requested_role'),
+    fullName: text('full_name'),
+    contactEmail: text('contact_email'),
+    institutionalEmail: text('institutional_email'),
+    institutionalCode: text('institutional_code'),
+    requestReason: text('request_reason'),
+    decisionReason: text('decision_reason'),
+
     decidedByUserId: uuid('decided_by_user_id')
       .references(() => users.id),
 
@@ -255,11 +269,13 @@ export const institutionAccessRequests = pgTable(
   },
   (table) => [
     uniqueIndex(
-      'institution_access_requests_user_institution_unique',
-    ).on(
-      table.userId,
-      table.institutionId,
-    ),
+      'institution_access_requests_one_pending_unique',
+    )
+      .on(
+        table.userId,
+        table.institutionId,
+      )
+      .where(sql`${table.status} = 'PENDING'`),
     index(
       'institution_access_requests_institution_status_idx',
     ).on(
@@ -294,8 +310,40 @@ export const institutionAccessRequests = pgTable(
             AND ${table.decidedByUserId} IS NOT NULL
             AND ${table.decidedAt} IS NOT NULL
           )
+          OR
+          (
+            ${table.status}::text = 'CANCELLED'
+            AND ${table.assignedRole} IS NULL
+            AND ${table.decidedByUserId} IS NULL
+            AND ${table.decidedAt} IS NOT NULL
+          )
         )
       `,
     ),
+  ],
+);
+
+export const accessRequestEvents = pgTable(
+  'access_request_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+
+    requestId: uuid('request_id')
+      .notNull()
+      .references(() => institutionAccessRequests.id),
+
+    actorUserId: uuid('actor_user_id')
+      .notNull()
+      .references(() => users.id),
+
+    action: accessRequestEventActionEnum('action').notNull(),
+    reason: text('reason'),
+
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index('access_request_events_request_idx').on(table.requestId),
   ],
 );

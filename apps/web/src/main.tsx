@@ -8,6 +8,7 @@ import {
 import { AdminHomePage } from './pages/AdminHomePage';
 import { AdminUsersPage } from './pages/AdminUsersPage';
 import { AdminMembersPage } from './pages/AdminMembersPage';
+import { AccessRequestsPage } from './pages/AccessRequestsPage';
 
 import './style.css';
 
@@ -37,16 +38,6 @@ type CurrentUser = {
       status: AcademicIdentityStatus;
     };
   }>;
-  accessRequest: null | {
-    id: string;
-    institution: {
-      id: string;
-      name: string;
-      slug: string;
-    };
-    status: 'PENDING' | 'APPROVED' | 'DENIED';
-    assignedRole: 'TEACHER' | 'STUDENT' | null;
-  };
 };
 
 type AuthState =
@@ -238,93 +229,14 @@ function App() {
 
   const { user } = auth;
   const institution = user.institutions[0];
-  const accessRequest = user.accessRequest;
-
-  if (!institution && accessRequest?.status === 'PENDING') {
-    return (
-      <main className="center-screen">
-        <div className="error-card">
-          <p className="eyebrow">VMAT</p>
-          <h1>Solicitud pendiente</h1>
-
-          <p className="muted">
-            Tu cuenta de GitHub está autenticada. Tu solicitud
-            para ingresar a {accessRequest.institution.name}{' '}
-            está esperando la aprobación de un administrador.
-          </p>
-
-          <span className="status-pill pending">
-            Pendiente de aprobación
-          </span>
-
-          <div>
-            <button
-              type="button"
-              className="logout-button"
-              onClick={logout}
-              disabled={loggingOut}
-            >
-              {loggingOut
-                ? 'Cerrando sesión…'
-                : 'Cerrar sesión'}
-            </button>
-          </div>
-        </div>
-      </main>
-    );
-  }
-
-  if (!institution && accessRequest?.status === 'DENIED') {
-    return (
-      <main className="center-screen">
-        <div className="error-card">
-          <p className="eyebrow">VMAT</p>
-          <h1>Acceso no autorizado</h1>
-
-          <p className="muted">
-            Tu solicitud para ingresar a{' '}
-            {accessRequest.institution.name} fue denegada.
-          </p>
-
-          <button
-            type="button"
-            className="logout-button"
-            onClick={logout}
-            disabled={loggingOut}
-          >
-            {loggingOut
-              ? 'Cerrando sesión…'
-              : 'Cerrar sesión'}
-          </button>
-        </div>
-      </main>
-    );
-  }
 
   if (!institution) {
     return (
-      <main className="center-screen">
-        <div className="error-card">
-          <p className="eyebrow">VMAT</p>
-          <h1>Cuenta sin institución</h1>
-
-          <p className="muted">
-            Tu cuenta está autenticada, pero no tiene una
-            institución ni una solicitud de acceso asociada.
-          </p>
-
-          <button
-            type="button"
-            className="logout-button"
-            onClick={logout}
-            disabled={loggingOut}
-          >
-            {loggingOut
-              ? 'Cerrando sesión…'
-              : 'Cerrar sesión'}
-          </button>
-        </div>
-      </main>
+      <AccessRequestsPage
+        githubLogin={user.github.login}
+        loggingOut={loggingOut}
+        onLogout={logout}
+      />
     );
   }
 

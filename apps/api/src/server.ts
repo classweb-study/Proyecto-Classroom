@@ -102,7 +102,6 @@ if (missingEnvironment.length > 0) {
     secureCookies:
       process.env.VERCEL_ENV === 'production' ||
       process.env.NODE_ENV === 'production',
-    defaultInstitutionSlug: 'unisabana',
   });
 }
 

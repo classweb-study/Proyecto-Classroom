@@ -33,6 +33,18 @@
       }
     },
     {
+      "source": "/me/(.*)",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
+      "source": "/institutions",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
       "source": "/auth",
       "destination": {
         "service": "api"

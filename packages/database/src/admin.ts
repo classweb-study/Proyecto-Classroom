@@ -11,6 +11,12 @@ export type PendingAccessRequest = {
   avatarUrl: string | null;
   institutionId: string;
   institutionName: string;
+  requestedRole: AssignableInstitutionRole | null;
+  fullName: string | null;
+  contactEmail: string | null;
+  institutionalEmail: string | null;
+  institutionalCode: string | null;
+  requestReason: string | null;
   createdAt: Date;
 };
 
@@ -122,6 +128,12 @@ export function createAdminRepository(pool: Pool) {
           avatar_url: string | null;
           institution_id: string;
           institution_name: string;
+          requested_role: AssignableInstitutionRole | null;
+          full_name: string | null;
+          contact_email: string | null;
+          institutional_email: string | null;
+          institutional_code: string | null;
+          request_reason: string | null;
           created_at: Date;
         }>({
           name: 'admin-access-requests-pending-list',
@@ -133,6 +145,12 @@ export function createAdminRepository(pool: Pool) {
               g.avatar_url,
               i.id AS institution_id,
               i.name AS institution_name,
+              r.requested_role,
+              r.full_name,
+              r.contact_email,
+              r.institutional_email,
+              r.institutional_code,
+              r.request_reason,
               r.created_at
             FROM institution_access_requests r
             JOIN github_identities g
@@ -155,6 +173,12 @@ export function createAdminRepository(pool: Pool) {
             avatarUrl: row.avatar_url,
             institutionId: row.institution_id,
             institutionName: row.institution_name,
+            requestedRole: row.requested_role,
+            fullName: row.full_name,
+            contactEmail: row.contact_email,
+            institutionalEmail: row.institutional_email,
+            institutionalCode: row.institutional_code,
+            requestReason: row.request_reason,
             createdAt: row.created_at,
           })),
         };
@@ -318,6 +342,8 @@ export function createAdminRepository(pool: Pool) {
               role
             )
             VALUES ($1, $2, $3)
+            ON CONFLICT (user_id, institution_id, role)
+            DO UPDATE SET status = 'ACTIVE', updated_at = now()
           `,
           values: [
             row.user_id,
@@ -344,6 +370,19 @@ export function createAdminRepository(pool: Pool) {
           ],
         });
 
+        await client.query({
+          name: 'admin-access-request-event-approved',
+          text: `
+            INSERT INTO access_request_events(
+              request_id,
+              actor_user_id,
+              action
+            )
+            VALUES ($1, $2, 'APPROVED')
+          `,
+          values: [input.requestId, input.actorUserId],
+        });
+
         await client.query('COMMIT');
 
         return {
@@ -366,6 +405,7 @@ export function createAdminRepository(pool: Pool) {
       actorUserId: string;
       institutionId: string;
       requestId: string;
+      reason: string;
     }): Promise<AccessDecisionResult> {
       let client: PoolClient | undefined;
 
@@ -425,6 +465,7 @@ export function createAdminRepository(pool: Pool) {
                SET status = 'DENIED',
                    assigned_role = NULL,
                    decided_by_user_id = $2,
+                   decision_reason = $3,
                    decided_at = now(),
                    updated_at = now()
              WHERE id = $1
@@ -432,6 +473,25 @@ export function createAdminRepository(pool: Pool) {
           values: [
             input.requestId,
             input.actorUserId,
+            input.reason,
+          ],
+        });
+
+        await client.query({
+          name: 'admin-access-request-event-denied',
+          text: `
+            INSERT INTO access_request_events(
+              request_id,
+              actor_user_id,
+              action,
+              reason
+            )
+            VALUES ($1, $2, 'DENIED', $3)
+          `,
+          values: [
+            input.requestId,
+            input.actorUserId,
+            input.reason,
           ],
         });
 
