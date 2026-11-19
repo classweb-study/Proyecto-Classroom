@@ -1,0 +1,458 @@
+/*
+ * VMAT · tokens de diseño
+ *
+ * Única fuente de verdad para color, tipografía, espaciado, radios,
+ * sombras, movimiento y capas. La guía está en apps/web/STYLEGUIDE.md.
+ *
+ * Reglas:
+ * - Los componentes usan tokens semánticos (--color-*, --accent-*),
+ *   nunca hex sueltos ni la escala --neutral-* directamente.
+ * - La base se elige con data-theme="light|dark|gray" y el secundario
+ *   con data-accent="green|blue|purple|pink|red|black|white" en <html>.
+ *   Los mismos atributos funcionan en cualquier elemento: así se pintan
+ *   las vistas previas del panel de Apariencia con otra base.
+ *   Ver src/theme/appearance.ts para las combinaciones permitidas.
+ * - Los pares texto/fondo de este archivo se verifican con
+ *   tests/unit/design-tokens.test.ts (contraste WCAG AA).
+ */
+
+:root {
+  /* ---------- Escala neutra (gris con matiz verde) ---------- */
+  --neutral-0: #ffffff;
+  --neutral-25: #fbfcfb;
+  --neutral-50: #f6f7f8;
+  --neutral-100: #edf0ee;
+  --neutral-200: #e2e6e3;
+  --neutral-300: #cfd6d1;
+  --neutral-400: #8c9790;
+  --neutral-500: #6b7670;
+  --neutral-600: #5f6b64;
+  --neutral-700: #3a4740;
+  --neutral-800: #2b332f;
+  --neutral-850: #202723;
+  --neutral-900: #181f1b;
+  --neutral-925: #141a17;
+  --neutral-950: #101512;
+
+  /* ---------- Tipografía ---------- */
+  --font-sans:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    'Segoe UI', sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, 'JetBrains Mono', Menlo, Consolas,
+    monospace;
+
+  --text-xs: 0.75rem; /* 12px: etiquetas, kickers, metadatos */
+  --text-sm: 0.875rem; /* 14px: tablas, ayudas de formulario */
+  --text-base: 1rem; /* 16px: cuerpo */
+  --text-lg: 1.125rem; /* 18px: títulos de tarjeta */
+  --text-xl: 1.375rem; /* 22px: títulos de sección (h2) */
+  --text-2xl: 1.75rem; /* 28px: título de página (h1) */
+  --text-display: clamp(2rem, 4vw, 2.75rem); /* login y portadas */
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  --weight-heavy: 800;
+
+  --leading-tight: 1.2;
+  --leading-snug: 1.4;
+  --leading-normal: 1.6;
+
+  --tracking-tight: -0.03em;
+  --tracking-normal: 0;
+  --tracking-caps: 0.12em;
+
+  /* ---------- Espaciado (base 4px) ---------- */
+  --space-0: 0;
+  --space-1: 0.25rem; /* 4 */
+  --space-2: 0.5rem; /* 8 */
+  --space-3: 0.75rem; /* 12 */
+  --space-4: 1rem; /* 16 */
+  --space-5: 1.25rem; /* 20 */
+  --space-6: 1.5rem; /* 24 */
+  --space-8: 2rem; /* 32 */
+  --space-10: 2.5rem; /* 40 */
+  --space-12: 3rem; /* 48 */
+  --space-16: 4rem; /* 64 */
+
+  /* ---------- Controles ---------- */
+  --control-sm: 2rem; /* 32px */
+  --control-md: 2.5rem; /* 40px */
+  --control-lg: 3rem; /* 48px */
+
+  /* ---------- Radios ---------- */
+  --radius-sm: 6px; /* badges, chips */
+  --radius-md: 10px; /* botones, inputs */
+  --radius-lg: 14px; /* tarjetas, paneles */
+  --radius-xl: 24px; /* tarjeta de login, modales grandes */
+  --radius-full: 999px; /* píldoras, avatares */
+
+  --border-width: 1px;
+
+  /* ---------- Movimiento ---------- */
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-slow: 320ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+
+  /* ---------- Capas ---------- */
+  --z-base: 0;
+  --z-sticky: 10;
+  --z-dropdown: 50;
+  --z-overlay: 100;
+  --z-modal: 200;
+  --z-toast: 300;
+
+  /* ---------- Layout ---------- */
+  --sidebar-width: 232px;
+  --topbar-height: 62px;
+  --content-max: 1320px;
+}
+
+
+/* =====================================================================
+ * COLORES BASE (data-theme)
+ * Fondos, texto, bordes y estados. El acento va aparte, más abajo.
+ * ===================================================================== */
+
+/* ---------- Blanco (predeterminado) ---------- */
+:root,
+[data-theme='light'] {
+  color-scheme: light;
+
+  --color-bg: var(--neutral-50);
+  --color-surface: var(--neutral-0);
+  --color-surface-raised: var(--neutral-0);
+  --color-surface-sunken: var(--neutral-25);
+  --color-hover: #f1f4f2;
+  --color-topbar: rgb(255 255 255 / 0.94);
+  --color-overlay: rgb(16 21 18 / 0.48);
+
+  --color-text: var(--neutral-850);
+  --color-text-strong: var(--neutral-950);
+  --color-text-muted: var(--neutral-600);
+  --color-text-subtle: var(--neutral-500);
+  --color-text-disabled: var(--neutral-400);
+
+  --color-border: var(--neutral-200);
+  --color-border-subtle: var(--neutral-100);
+  --color-border-strong: var(--neutral-300);
+
+  /* Superficie invertida: botón de GitHub */
+  --inverse-bg: #151918;
+  --inverse-bg-hover: #262c29;
+  --inverse-text: #ffffff;
+
+  --success-bg: #eaf7ef;
+  --success-text: #166a41;
+  --success-border: #b6dfc6;
+
+  --warning-bg: #f7efd6;
+  --warning-text: #7a6018;
+  --warning-border: #e6d39a;
+
+  --danger-bg: #fff4f4;
+  --danger-text: #a4433f;
+  --danger-border: #efcaca;
+  --danger-solid: #b3403b;
+  --danger-on-solid: #ffffff;
+
+  /* Botón Denegar: destructivo suave. Con secundario rojo pasa a sólido. */
+  --deny-bg: var(--color-surface);
+  --deny-bg-hover: var(--danger-bg);
+  --deny-text: var(--danger-text);
+  --deny-border: var(--danger-border);
+
+  --info-bg: #eef4fc;
+  --info-text: #1f5fae;
+  --info-border: #c6d9f3;
+
+  --shadow-color: 25 45 34;
+  --shadow-sm: 0 1px 2px rgb(var(--shadow-color) / 0.06);
+  --shadow-md: 0 8px 24px rgb(var(--shadow-color) / 0.08);
+  --shadow-lg: 0 24px 70px rgb(var(--shadow-color) / 0.12);
+}
+
+/* ---------- Negro ---------- */
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  --color-bg: var(--neutral-950);
+  --color-surface: var(--neutral-900);
+  --color-surface-raised: #1d2520;
+  --color-surface-sunken: var(--neutral-925);
+  --color-hover: #1f2823;
+  --color-topbar: rgb(24 31 27 / 0.94);
+  --color-overlay: rgb(0 0 0 / 0.6);
+
+  --color-text: #edf3ef;
+  --color-text-strong: #f7faf8;
+  --color-text-muted: #a8b2ac;
+  --color-text-subtle: var(--neutral-400);
+  --color-text-disabled: #66716b;
+
+  --color-border: #2c3831;
+  --color-border-subtle: #263029;
+  --color-border-strong: var(--neutral-700);
+
+  --inverse-bg: #edf3ef;
+  --inverse-bg-hover: #ffffff;
+  --inverse-text: #101512;
+
+  --success-bg: #173326;
+  --success-text: #7cdfa6;
+  --success-border: #2b5a40;
+
+  --warning-bg: #393019;
+  --warning-text: #e8ca76;
+  --warning-border: #5c4d24;
+
+  --danger-bg: #2c1d1d;
+  --danger-text: #efa0a0;
+  --danger-border: #543131;
+  --danger-solid: #e0716b;
+  --danger-on-solid: #1a0f0f;
+
+  --deny-bg: var(--color-surface);
+  --deny-bg-hover: var(--danger-bg);
+  --deny-text: var(--danger-text);
+  --deny-border: var(--danger-border);
+
+  --info-bg: #17243a;
+  --info-text: #93bdf2;
+  --info-border: #2a4268;
+
+  --shadow-color: 0 0 0;
+  --shadow-sm: 0 1px 2px rgb(var(--shadow-color) / 0.3);
+  --shadow-md: 0 8px 24px rgb(var(--shadow-color) / 0.35);
+  --shadow-lg: 0 24px 70px rgb(var(--shadow-color) / 0.45);
+}
+
+/* ---------- Gris (oscuro atenuado, sin matiz verde) ---------- */
+[data-theme='gray'] {
+  color-scheme: dark;
+
+  --color-bg: #25282b;
+  --color-surface: #2f3337;
+  --color-surface-raised: #383c41;
+  --color-surface-sunken: #2a2d31;
+  --color-hover: #383c41;
+  --color-topbar: rgb(47 51 55 / 0.94);
+  --color-overlay: rgb(0 0 0 / 0.55);
+
+  --color-text: #e9ecee;
+  --color-text-strong: #f6f7f8;
+  --color-text-muted: #b9bfc4;
+  --color-text-subtle: #a3aab0;
+  --color-text-disabled: #6f767c;
+
+  --color-border: #454b51;
+  --color-border-subtle: #3b4045;
+  --color-border-strong: #5a6168;
+
+  --inverse-bg: #eceff1;
+  --inverse-bg-hover: #ffffff;
+  --inverse-text: #1f2326;
+
+  --success-bg: #213a2e;
+  --success-text: #8fe3b3;
+  --success-border: #34614a;
+
+  --warning-bg: #3d3520;
+  --warning-text: #ecd38c;
+  --warning-border: #62542c;
+
+  --danger-bg: #3a2627;
+  --danger-text: #f3adab;
+  --danger-border: #63393a;
+  --danger-solid: #e57b75;
+  --danger-on-solid: #1a0f0f;
+
+  --deny-bg: var(--color-surface);
+  --deny-bg-hover: var(--danger-bg);
+  --deny-text: var(--danger-text);
+  --deny-border: var(--danger-border);
+
+  --info-bg: #1f2d42;
+  --info-text: #a3c7f5;
+  --info-border: #36507a;
+
+  --shadow-color: 0 0 0;
+  --shadow-sm: 0 1px 2px rgb(var(--shadow-color) / 0.25);
+  --shadow-md: 0 8px 24px rgb(var(--shadow-color) / 0.3);
+  --shadow-lg: 0 24px 70px rgb(var(--shadow-color) / 0.4);
+}
+
+/* =====================================================================
+ * COLOR SECUNDARIO (data-accent)
+ * Cada secundario define los mismos siete tokens dos veces: para la base
+ * blanca y para las bases oscuras (negro y gris).
+ * Combinaciones bloqueadas (ver appearance.ts): blanco sobre blanco,
+ * negro sobre negro y negro sobre gris.
+ * ===================================================================== */
+
+/* ---------- Sobre base blanca ---------- */
+:root,
+[data-accent='green'] {
+  --accent-solid: #117a46;
+  --accent-solid-hover: #0d6a3c;
+  --accent-on-solid: #ffffff;
+  --accent-soft: #eaf7ef;
+  --accent-soft-hover: #dcf1e4;
+  --accent-text: #116b3f;
+  --accent-border: #b6dfc6;
+}
+
+[data-accent='blue'] {
+  --accent-solid: #1d5fc2;
+  --accent-solid-hover: #184fa3;
+  --accent-on-solid: #ffffff;
+  --accent-soft: #eaf1fc;
+  --accent-soft-hover: #dbe7fa;
+  --accent-text: #1b56b0;
+  --accent-border: #b9cff3;
+}
+
+[data-accent='purple'] {
+  --accent-solid: #6b3fc4;
+  --accent-solid-hover: #5a33a8;
+  --accent-on-solid: #ffffff;
+  --accent-soft: #f1ecfb;
+  --accent-soft-hover: #e6dcf8;
+  --accent-text: #5f37b0;
+  --accent-border: #d2c3f1;
+}
+
+[data-accent='pink'] {
+  --accent-solid: #c02670;
+  --accent-solid-hover: #a31f5f;
+  --accent-on-solid: #ffffff;
+  --accent-soft: #fcebf3;
+  --accent-soft-hover: #f8d8e8;
+  --accent-text: #aa2163;
+  --accent-border: #f1c0d8;
+}
+
+[data-accent='red'] {
+  --accent-solid: #c0362c;
+  --accent-solid-hover: #a32c23;
+  --accent-on-solid: #ffffff;
+  --accent-soft: #fdeeec;
+  --accent-soft-hover: #fadcd8;
+  --accent-text: #ad3027;
+  --accent-border: #f2c4bf;
+}
+
+/* Con secundario rojo, Denegar va en rojo sólido con letras blancas. */
+[data-accent='red'] {
+  --deny-bg: #b42d24;
+  --deny-bg-hover: #98251d;
+  --deny-text: #ffffff;
+  --deny-border: #b42d24;
+}
+
+[data-accent='black'] {
+  --accent-solid: #1c2420;
+  --accent-solid-hover: #333d38;
+  --accent-on-solid: #ffffff;
+  --accent-soft: #eceeed;
+  --accent-soft-hover: #e0e4e2;
+  --accent-text: #1c2420;
+  --accent-border: #c4cbc7;
+}
+
+/* ---------- Sobre bases oscuras (negro y gris) ---------- */
+[data-theme='dark'],
+[data-theme='gray'],
+[data-theme='dark'][data-accent='green'],
+[data-theme='gray'][data-accent='green'] {
+  --accent-solid: #21b66c;
+  --accent-solid-hover: #29c978;
+  --accent-on-solid: #0b130f;
+  --accent-soft: #173326;
+  --accent-soft-hover: #1d3f2f;
+  --accent-text: #7cdfa6;
+  --accent-border: #2b5a40;
+}
+
+[data-theme='dark'][data-accent='blue'],
+[data-theme='gray'][data-accent='blue'] {
+  --accent-solid: #5b9bf0;
+  --accent-solid-hover: #78aef4;
+  --accent-on-solid: #0a1220;
+  --accent-soft: #172640;
+  --accent-soft-hover: #1d3050;
+  --accent-text: #9cc3f7;
+  --accent-border: #2c4772;
+}
+
+[data-theme='dark'][data-accent='purple'],
+[data-theme='gray'][data-accent='purple'] {
+  --accent-solid: #a684f0;
+  --accent-solid-hover: #b89bf4;
+  --accent-on-solid: #140d22;
+  --accent-soft: #261d3d;
+  --accent-soft-hover: #2f244b;
+  --accent-text: #c7b2f7;
+  --accent-border: #45366e;
+}
+
+[data-theme='dark'][data-accent='pink'],
+[data-theme='gray'][data-accent='pink'] {
+  --accent-solid: #f06aa8;
+  --accent-solid-hover: #f487b9;
+  --accent-on-solid: #22091a;
+  --accent-soft: #3a1a2b;
+  --accent-soft-hover: #472034;
+  --accent-text: #f6a4ca;
+  --accent-border: #6b3150;
+}
+
+[data-theme='dark'][data-accent='red'],
+[data-theme='gray'][data-accent='red'] {
+  --accent-solid: #f0736a;
+  --accent-solid-hover: #f48b83;
+  --accent-on-solid: #1f0b09;
+  --accent-soft: #3a1c1a;
+  --accent-soft-hover: #472220;
+  --accent-text: #f6a69f;
+  --accent-border: #6b3330;
+}
+
+[data-theme='dark'][data-accent='red'],
+[data-theme='gray'][data-accent='red'] {
+  --deny-bg: #c4362c;
+  --deny-bg-hover: #a82e25;
+  --deny-text: #ffffff;
+  --deny-border: #c4362c;
+}
+
+[data-theme='dark'][data-accent='white'],
+[data-theme='gray'][data-accent='white'] {
+  --accent-solid: #eef2f0;
+  --accent-solid-hover: #ffffff;
+  --accent-on-solid: #101512;
+  --accent-soft: #2a312d;
+  --accent-soft-hover: #333b37;
+  --accent-text: #eef2f0;
+  --accent-border: #4a544e;
+}
+
+/* El anillo de foco sigue al acento en cualquier combinación,
+   también dentro de las vistas previas del panel de Apariencia. */
+:root,
+[data-theme],
+[data-accent] {
+  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--accent-solid) 45%, transparent);
+}
+
+/* Quien pida menos movimiento no recibe animaciones largas. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0ms;
+    --duration-base: 0ms;
+    --duration-slow: 0ms;
+  }
+}
