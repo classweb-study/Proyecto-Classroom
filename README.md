@@ -49,7 +49,9 @@ Después de cada Preview y de producción, compruebe desde el dominio publicado 
 
 ## PostgreSQL local
 
-Copie `.env.example` a `.env`; elija `POSTGRES_PASSWORD` y construya `DATABASE_URL` con usuario/database `classroom`, host `127.0.0.1`, puerto `5432` y contraseña codificada para URL. No comparta ese archivo. Compose lee `.env`; los procesos Node cargan `.env` si existe; las variables de su shell tienen prioridad.
+Neon CLI escribe las variables de su branch en `.env.local`; los scripts de API, worker y base de datos las cargan automáticamente. La aplicación mantiene `pg` y Drizzle, que son apropiados para este backend Fastify de Node con una conexión `DATABASE_URL` pooled. Para migraciones, use temporalmente una URL directa (`DATABASE_URL_UNPOOLED`) en un branch de prueba y después aplique el cambio de forma controlada a producción.
+
+Para PostgreSQL local, copie `.env.example` a `.env`; elija `POSTGRES_PASSWORD` y construya `DATABASE_URL` con usuario/database `classroom`, host `127.0.0.1`, puerto `5432` y contraseña codificada para URL. No comparta ese archivo. Compose lee `.env`; para ejecutar contra esta configuración local exporte `DATABASE_URL` en la shell. Los scripts de Node cargan `.env.local` para la conexión administrada por Neon y las variables de la shell tienen prioridad.
 
 ```sh
 docker compose up -d postgres

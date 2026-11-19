@@ -2,19 +2,11 @@ import { Pool } from 'pg';
 
 import {
   createAdminRepository,
-} from '../../../packages/database/src/admin.js';
-import {
   createAuthRepository,
-} from '../../../packages/database/src/auth.js';
-import {
   createInstitutionAccessRepository,
-} from '../../../packages/database/src/access.js';
-import {
-  createGitHubAuth,
-} from '../../../packages/github/src/auth.js';
-import {
-  databaseUrl,
-} from '../../../packages/shared/src/index.js';
+} from '@classroom/database';
+import { createGitHubAuth } from '@classroom/github';
+import { databaseUrl } from '@classroom/shared';
 
 import { createApp } from './app.js';
 
