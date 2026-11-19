@@ -17,6 +17,8 @@ export type PendingAccessRequest = {
   institutionalEmail: string | null;
   institutionalCode: string | null;
   requestReason: string | null;
+  // A matching email domain is only a hint for the reviewer, never proof of membership.
+  domainMatch: boolean;
   createdAt: Date;
 };
 
@@ -74,8 +76,139 @@ export type AccessDecisionResult =
       status: 'ALREADY_DECIDED';
     };
 
+export type InstitutionDomain = {
+  id: string;
+  domain: string;
+};
+
+export type InstitutionOverview = {
+  institution: {
+    id: string;
+    name: string;
+    slug: string;
+    description: string | null;
+  };
+  domains: InstitutionDomain[];
+  counts: {
+    teachers: number;
+    students: number;
+    pendingRequests: number;
+  };
+};
+
+export type AuditLogEntry = {
+  id: string;
+  action: string;
+  actorLogin: string | null;
+  targetLogin: string | null;
+  details: string | null;
+  createdAt: Date;
+};
+
+type Forbidden = { status: 'FORBIDDEN' };
+
+export type MembershipChangeResult =
+  | { status: 'OK' }
+  | { status: 'NOT_FOUND' }
+  | { status: 'SELF' }
+  | { status: 'SAME_ROLE' }
+  | Forbidden;
+
 async function rollback(client: PoolClient) {
   await client.query('ROLLBACK').catch(() => {});
+}
+
+async function asInstitutionAdmin<T>(
+  pool: Pool,
+  actorUserId: string,
+  institutionId: string,
+  work: (client: PoolClient) => Promise<T>,
+): Promise<T | Forbidden> {
+  let client: PoolClient | undefined;
+
+  try {
+    client = await pool.connect();
+    await client.query('BEGIN');
+
+    if (!(await isActiveAdmin(client, actorUserId, institutionId))) {
+      await client.query('ROLLBACK');
+      return { status: 'FORBIDDEN' };
+    }
+
+    const result = await work(client);
+    await client.query('COMMIT');
+    return result;
+  } catch {
+    if (client) {
+      await rollback(client);
+    }
+
+    throw new Error('ADMIN_STORAGE_UNAVAILABLE');
+  } finally {
+    client?.release();
+  }
+}
+
+async function recordAudit(
+  client: PoolClient,
+  event: {
+    institutionId: string;
+    actorUserId: string;
+    action:
+      | 'MEMBERSHIP_REVOKED'
+      | 'MEMBERSHIP_ROLE_CHANGED'
+      | 'INSTITUTION_UPDATED'
+      | 'DOMAIN_ADDED'
+      | 'DOMAIN_REMOVED';
+    targetUserId?: string;
+    details?: string;
+  },
+) {
+  await client.query({
+    name: 'admin-audit-event-insert',
+    text: `
+      INSERT INTO institution_audit_events(
+        institution_id,
+        actor_user_id,
+        action,
+        target_user_id,
+        details
+      )
+      VALUES ($1, $2, $3, $4, $5)
+    `,
+    values: [
+      event.institutionId,
+      event.actorUserId,
+      event.action,
+      event.targetUserId ?? null,
+      event.details ?? null,
+    ],
+  });
+}
+
+async function lockManageableMembership(
+  client: PoolClient,
+  institutionId: string,
+  membershipId: string,
+) {
+  const result = await client.query<{
+    user_id: string;
+    role: AssignableInstitutionRole;
+  }>({
+    name: 'admin-membership-lock',
+    text: `
+      SELECT user_id, role
+        FROM institution_memberships
+       WHERE id = $1
+         AND institution_id = $2
+         AND role IN ('TEACHER', 'STUDENT')
+         AND status = 'ACTIVE'
+       FOR UPDATE
+    `,
+    values: [membershipId, institutionId],
+  });
+
+  return result.rows[0] ?? null;
 }
 
 async function isActiveAdmin(
@@ -134,6 +267,7 @@ export function createAdminRepository(pool: Pool) {
           institutional_email: string | null;
           institutional_code: string | null;
           request_reason: string | null;
+          domain_match: boolean;
           created_at: Date;
         }>({
           name: 'admin-access-requests-pending-list',
@@ -151,6 +285,15 @@ export function createAdminRepository(pool: Pool) {
               r.institutional_email,
               r.institutional_code,
               r.request_reason,
+              EXISTS (
+                SELECT 1
+                  FROM institution_domains d
+                 WHERE d.institution_id = r.institution_id
+                   AND d.domain IN (
+                     split_part(r.institutional_email, '@', 2),
+                     split_part(r.contact_email, '@', 2)
+                   )
+              ) AS domain_match,
               r.created_at
             FROM institution_access_requests r
             JOIN github_identities g
@@ -179,6 +322,7 @@ export function createAdminRepository(pool: Pool) {
             institutionalEmail: row.institutional_email,
             institutionalCode: row.institutional_code,
             requestReason: row.request_reason,
+            domainMatch: row.domain_match,
             createdAt: row.created_at,
           })),
         };
@@ -510,6 +654,367 @@ export function createAdminRepository(pool: Pool) {
       } finally {
         client?.release();
       }
+    },
+
+    getInstitutionOverview(
+      actorUserId: string,
+      institutionId: string,
+    ) {
+      return asInstitutionAdmin(
+        pool,
+        actorUserId,
+        institutionId,
+        async (client): Promise<{ status: 'OK' } & InstitutionOverview> => {
+          const institution = await client.query<{
+            id: string;
+            name: string;
+            slug: string;
+            description: string | null;
+            teachers: number;
+            students: number;
+            pending_requests: number;
+          }>({
+            name: 'admin-institution-overview',
+            text: `
+              SELECT
+                i.id,
+                i.name,
+                i.slug,
+                i.description,
+                (SELECT count(*)::int FROM institution_memberships
+                  WHERE institution_id = i.id AND role = 'TEACHER' AND status = 'ACTIVE') AS teachers,
+                (SELECT count(*)::int FROM institution_memberships
+                  WHERE institution_id = i.id AND role = 'STUDENT' AND status = 'ACTIVE') AS students,
+                (SELECT count(*)::int FROM institution_access_requests
+                  WHERE institution_id = i.id AND status = 'PENDING') AS pending_requests
+              FROM institutions i
+              WHERE i.id = $1
+            `,
+            values: [institutionId],
+          });
+
+          const domains = await client.query<InstitutionDomain>({
+            name: 'admin-institution-domains-list',
+            text: `
+              SELECT id, domain
+                FROM institution_domains
+               WHERE institution_id = $1
+               ORDER BY domain
+            `,
+            values: [institutionId],
+          });
+
+          const row = institution.rows[0]!;
+
+          return {
+            status: 'OK',
+            institution: {
+              id: row.id,
+              name: row.name,
+              slug: row.slug,
+              description: row.description,
+            },
+            domains: domains.rows,
+            counts: {
+              teachers: row.teachers,
+              students: row.students,
+              pendingRequests: row.pending_requests,
+            },
+          };
+        },
+      );
+    },
+
+    updateInstitution(input: {
+      actorUserId: string;
+      institutionId: string;
+      name: string;
+      description: string | null;
+    }) {
+      return asInstitutionAdmin(
+        pool,
+        input.actorUserId,
+        input.institutionId,
+        async (client): Promise<{ status: 'OK' }> => {
+          await client.query({
+            name: 'admin-institution-update',
+            text: `
+              UPDATE institutions
+                 SET name = $2,
+                     description = $3,
+                     updated_at = now()
+               WHERE id = $1
+            `,
+            values: [
+              input.institutionId,
+              input.name,
+              input.description,
+            ],
+          });
+
+          await recordAudit(client, {
+            institutionId: input.institutionId,
+            actorUserId: input.actorUserId,
+            action: 'INSTITUTION_UPDATED',
+          });
+
+          return { status: 'OK' };
+        },
+      );
+    },
+
+    addInstitutionDomain(input: {
+      actorUserId: string;
+      institutionId: string;
+      domain: string;
+    }) {
+      return asInstitutionAdmin(
+        pool,
+        input.actorUserId,
+        input.institutionId,
+        async (
+          client,
+        ): Promise<
+          | { status: 'OK'; domain: InstitutionDomain }
+          | { status: 'DUPLICATE' }
+        > => {
+          const created = await client.query<InstitutionDomain>({
+            name: 'admin-institution-domain-add',
+            text: `
+              INSERT INTO institution_domains(institution_id, domain)
+              VALUES ($1, $2)
+              ON CONFLICT (institution_id, domain) DO NOTHING
+              RETURNING id, domain
+            `,
+            values: [input.institutionId, input.domain],
+          });
+
+          if (created.rowCount !== 1) {
+            return { status: 'DUPLICATE' };
+          }
+
+          await recordAudit(client, {
+            institutionId: input.institutionId,
+            actorUserId: input.actorUserId,
+            action: 'DOMAIN_ADDED',
+            details: input.domain,
+          });
+
+          return { status: 'OK', domain: created.rows[0]! };
+        },
+      );
+    },
+
+    removeInstitutionDomain(input: {
+      actorUserId: string;
+      institutionId: string;
+      domainId: string;
+    }) {
+      return asInstitutionAdmin(
+        pool,
+        input.actorUserId,
+        input.institutionId,
+        async (
+          client,
+        ): Promise<{ status: 'OK' } | { status: 'NOT_FOUND' }> => {
+          const removed = await client.query<{ domain: string }>({
+            name: 'admin-institution-domain-remove',
+            text: `
+              DELETE FROM institution_domains
+               WHERE id = $1
+                 AND institution_id = $2
+              RETURNING domain
+            `,
+            values: [input.domainId, input.institutionId],
+          });
+
+          if (removed.rowCount !== 1) {
+            return { status: 'NOT_FOUND' };
+          }
+
+          await recordAudit(client, {
+            institutionId: input.institutionId,
+            actorUserId: input.actorUserId,
+            action: 'DOMAIN_REMOVED',
+            details: removed.rows[0]!.domain,
+          });
+
+          return { status: 'OK' };
+        },
+      );
+    },
+
+    revokeMembership(input: {
+      actorUserId: string;
+      institutionId: string;
+      membershipId: string;
+    }) {
+      return asInstitutionAdmin(
+        pool,
+        input.actorUserId,
+        input.institutionId,
+        async (client): Promise<MembershipChangeResult> => {
+          const membership = await lockManageableMembership(
+            client,
+            input.institutionId,
+            input.membershipId,
+          );
+
+          if (!membership) {
+            return { status: 'NOT_FOUND' };
+          }
+
+          if (membership.user_id === input.actorUserId) {
+            return { status: 'SELF' };
+          }
+
+          await client.query({
+            name: 'admin-membership-revoke',
+            text: `
+              UPDATE institution_memberships
+                 SET status = 'REVOKED',
+                     updated_at = now()
+               WHERE id = $1
+            `,
+            values: [input.membershipId],
+          });
+
+          await recordAudit(client, {
+            institutionId: input.institutionId,
+            actorUserId: input.actorUserId,
+            action: 'MEMBERSHIP_REVOKED',
+            targetUserId: membership.user_id,
+            details: membership.role,
+          });
+
+          return { status: 'OK' };
+        },
+      );
+    },
+
+    changeMembershipRole(input: {
+      actorUserId: string;
+      institutionId: string;
+      membershipId: string;
+      role: AssignableInstitutionRole;
+    }) {
+      return asInstitutionAdmin(
+        pool,
+        input.actorUserId,
+        input.institutionId,
+        async (client): Promise<MembershipChangeResult> => {
+          const membership = await lockManageableMembership(
+            client,
+            input.institutionId,
+            input.membershipId,
+          );
+
+          if (!membership) {
+            return { status: 'NOT_FOUND' };
+          }
+
+          if (membership.user_id === input.actorUserId) {
+            return { status: 'SELF' };
+          }
+
+          if (membership.role === input.role) {
+            return { status: 'SAME_ROLE' };
+          }
+
+          await client.query({
+            name: 'admin-membership-revoke-for-role-change',
+            text: `
+              UPDATE institution_memberships
+                 SET status = 'REVOKED',
+                     updated_at = now()
+               WHERE id = $1
+            `,
+            values: [input.membershipId],
+          });
+
+          await client.query({
+            name: 'admin-membership-activate-new-role',
+            text: `
+              INSERT INTO institution_memberships(
+                user_id,
+                institution_id,
+                role
+              )
+              VALUES ($1, $2, $3)
+              ON CONFLICT (user_id, institution_id, role)
+              DO UPDATE SET status = 'ACTIVE', updated_at = now()
+            `,
+            values: [
+              membership.user_id,
+              input.institutionId,
+              input.role,
+            ],
+          });
+
+          await recordAudit(client, {
+            institutionId: input.institutionId,
+            actorUserId: input.actorUserId,
+            action: 'MEMBERSHIP_ROLE_CHANGED',
+            targetUserId: membership.user_id,
+            details: `${membership.role}->${input.role}`,
+          });
+
+          return { status: 'OK' };
+        },
+      );
+    },
+
+    listAuditLog(actorUserId: string, institutionId: string) {
+      return asInstitutionAdmin(
+        pool,
+        actorUserId,
+        institutionId,
+        async (
+          client,
+        ): Promise<{ status: 'OK'; entries: AuditLogEntry[] }> => {
+          const result = await client.query<{
+            id: string;
+            action: string;
+            actor_login: string | null;
+            target_login: string | null;
+            details: string | null;
+            created_at: Date;
+          }>({
+            name: 'admin-audit-log-list',
+            text: `
+              SELECT e.id, e.action::text, ga.login AS actor_login,
+                     gt.login AS target_login, e.details, e.created_at
+                FROM institution_audit_events e
+                LEFT JOIN github_identities ga ON ga.user_id = e.actor_user_id
+                LEFT JOIN github_identities gt ON gt.user_id = e.target_user_id
+               WHERE e.institution_id = $1
+              UNION ALL
+              SELECT ev.id, 'REQUEST_' || ev.action::text, ga.login,
+                     gt.login, ev.reason, ev.created_at
+                FROM access_request_events ev
+                JOIN institution_access_requests r ON r.id = ev.request_id
+                LEFT JOIN github_identities ga ON ga.user_id = ev.actor_user_id
+                LEFT JOIN github_identities gt ON gt.user_id = r.user_id
+               WHERE r.institution_id = $1
+              ORDER BY created_at DESC
+              LIMIT 50
+            `,
+            values: [institutionId],
+          });
+
+          return {
+            status: 'OK',
+            entries: result.rows.map(row => ({
+              id: row.id,
+              action: row.action,
+              actorLogin: row.actor_login,
+              targetLogin: row.target_login,
+              details: row.details,
+              createdAt: row.created_at,
+            })),
+          };
+        },
+      );
     },
   });
 }

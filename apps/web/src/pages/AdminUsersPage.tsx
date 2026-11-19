@@ -15,6 +15,7 @@ type PendingAccessRequest = {
   institutionalEmail: string | null;
   institutionalCode: string | null;
   requestReason: string | null;
+  domainMatch: boolean;
   createdAt: string;
 };
 
@@ -272,9 +273,18 @@ export function AdminUsersPage({
                     </div>
 
                     <div className="access-request-status">
-                      <span className="status-pill pending">
-                        Pendiente
-                      </span>
+                      {request.domainMatch ? (
+                        <span
+                          className="status-pill domain-match"
+                          title="El correo coincide con un dominio de la institución. Es una pista, no una prueba."
+                        >
+                          Dominio coincide
+                        </span>
+                      ) : (
+                        <span className="status-pill pending">
+                          Pendiente
+                        </span>
+                      )}
                     </div>
 
                     <div className="access-request-actions">

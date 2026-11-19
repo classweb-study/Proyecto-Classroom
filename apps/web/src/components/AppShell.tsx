@@ -17,6 +17,9 @@ type AppShellProps = {
   githubLogin: string;
   avatarUrl: string | null;
   institutionName: string;
+  institutions: Array<{ id: string; name: string }>;
+  activeInstitutionId: string;
+  onSwitchInstitution: (institutionId: string) => void;
   roles: string[];
   loggingOut: boolean;
   onLogout: () => void;
@@ -172,6 +175,9 @@ export function AppShell({
   githubLogin,
   avatarUrl,
   institutionName,
+  institutions,
+  activeInstitutionId,
+  onSwitchInstitution,
   roles,
   loggingOut,
   onLogout,
@@ -233,7 +239,32 @@ export function AppShell({
         <div className="vmat-sidebar-bottom">
           <div className="sidebar-institution">
             <span>INSTITUCIÓN</span>
-            <strong>{institutionName}</strong>
+            {institutions.length > 1 ? (
+              <>
+                <label
+                  htmlFor="active-institution"
+                  className="visually-hidden"
+                >
+                  Institución activa
+                </label>
+                <select
+                  id="active-institution"
+                  className="institution-select"
+                  value={activeInstitutionId}
+                  onChange={event =>
+                    onSwitchInstitution(event.target.value)
+                  }
+                >
+                  {institutions.map(item => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              </>
+            ) : (
+              <strong>{institutionName}</strong>
+            )}
           </div>
 
           <div className="sidebar-user">

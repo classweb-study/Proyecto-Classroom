@@ -1,62 +1,134 @@
+import { useEffect, useState } from 'react';
+
 type AdminHomePageProps = {
+  institutionId: string;
   institutionName: string;
-  githubLogin: string;
+  onOpenRequests: () => void;
 };
 
-function ShieldIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        d="M12 3 20 6v5c0 5.2-3.4 8.5-8 10-4.6-1.5-8-4.8-8-10V6l8-3Z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinejoin="round"
-      />
-      <path
-        d="m8.8 12 2.1 2.1 4.5-4.6"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
+type Overview = {
+  counts: {
+    teachers: number;
+    students: number;
+    pendingRequests: number;
+  };
+  domains: Array<{ id: string; domain: string }>;
+};
+
+type AuditEntry = {
+  id: string;
+  action: string;
+  actorLogin: string | null;
+  targetLogin: string | null;
+  details: string | null;
+  createdAt: string;
+};
+
+type LoadState =
+  | { status: 'loading' }
+  | { status: 'ready'; overview: Overview; entries: AuditEntry[] }
+  | { status: 'error' };
+
+const ROLE_LABEL: Record<string, string> = {
+  TEACHER: 'docente',
+  STUDENT: 'estudiante',
+};
+
+function describe(entry: AuditEntry): string {
+  const actor = entry.actorLogin ? `@${entry.actorLogin}` : 'Alguien';
+  const target = entry.targetLogin ? `@${entry.targetLogin}` : 'un usuario';
+
+  switch (entry.action) {
+    case 'REQUEST_SUBMITTED':
+      return `${actor} solicitó acceso`;
+    case 'REQUEST_APPROVED':
+      return `${actor} aprobó la solicitud de ${target}`;
+    case 'REQUEST_DENIED':
+      return `${actor} rechazó la solicitud de ${target}`;
+    case 'REQUEST_CANCELLED':
+      return `${actor} canceló su solicitud`;
+    case 'MEMBERSHIP_REVOKED':
+      return `${actor} revocó el acceso de ${target}`;
+    case 'MEMBERSHIP_ROLE_CHANGED': {
+      const [from, to] = (entry.details ?? '').split('->');
+      return `${actor} cambió a ${target} de ${ROLE_LABEL[from ?? ''] ?? from} a ${ROLE_LABEL[to ?? ''] ?? to}`;
+    }
+    case 'INSTITUTION_UPDATED':
+      return `${actor} editó la información de la institución`;
+    case 'DOMAIN_ADDED':
+      return `${actor} agregó el dominio ${entry.details}`;
+    case 'DOMAIN_REMOVED':
+      return `${actor} quitó el dominio ${entry.details}`;
+    default:
+      return `${actor}: ${entry.action}`;
+  }
 }
 
-function UsersIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
+function formatDate(value: string) {
+  const date = new Date(value);
 
-function LinkIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        d="M10 13a5 5 0 0 0 7.07.07l2-2A5 5 0 0 0 12 4l-1.15 1.15M14 11a5 5 0 0 0-7.07-.07l-2 2A5 5 0 0 0 12 20l1.15-1.15"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
+  if (Number.isNaN(date.getTime())) {
+    return 'Fecha no disponible';
+  }
+
+  return new Intl.DateTimeFormat('es-CO', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(date);
 }
 
 export function AdminHomePage({
+  institutionId,
   institutionName,
-  githubLogin,
+  onOpenRequests,
 }: AdminHomePageProps) {
+  const [state, setState] = useState<LoadState>({
+    status: 'loading',
+  });
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const options = {
+      credentials: 'same-origin' as const,
+      signal: controller.signal,
+    };
+
+    setState({ status: 'loading' });
+
+    Promise.all([
+      fetch(`/admin/institutions/${institutionId}`, options),
+      fetch(`/admin/institutions/${institutionId}/audit-log`, options),
+    ])
+      .then(async ([overviewResponse, logResponse]) => {
+        if (!overviewResponse.ok || !logResponse.ok) {
+          throw new Error('Load failed');
+        }
+
+        const overview = (await overviewResponse.json()) as Overview;
+        const log = (await logResponse.json()) as {
+          entries: AuditEntry[];
+        };
+
+        setState({
+          status: 'ready',
+          overview,
+          entries: log.entries,
+        });
+      })
+      .catch(error => {
+        if (
+          error instanceof DOMException &&
+          error.name === 'AbortError'
+        ) {
+          return;
+        }
+
+        setState({ status: 'error' });
+      });
+
+    return () => controller.abort();
+  }, [institutionId]);
+
   return (
     <div className="admin-page">
       <section className="page-heading">
@@ -64,7 +136,7 @@ export function AdminHomePage({
           <p className="page-kicker">ADMINISTRACIÓN</p>
           <h1>Panel institucional</h1>
           <p>
-            Gestiona el acceso y los roles académicos de {institutionName}.
+            Resumen de acceso y actividad de {institutionName}.
           </p>
         </div>
 
@@ -74,110 +146,103 @@ export function AdminHomePage({
         </span>
       </section>
 
-      <section className="admin-summary-grid">
-        <article className="summary-card">
-          <div className="summary-icon">
-            <ShieldIcon />
-          </div>
+      {state.status === 'loading' && (
+        <div className="admin-loading">
+          <div className="loader" />
+          <span>Cargando panel…</span>
+        </div>
+      )}
 
-          <div>
-            <span className="summary-label">Tu acceso</span>
-            <strong>Administrador activo</strong>
-            <p>
-              Tu cuenta tiene permisos administrativos dentro de esta
-              institución.
-            </p>
-          </div>
-        </article>
+      {state.status === 'error' && (
+        <div className="admin-error-state">
+          <strong>No pudimos cargar el panel.</strong>
+          <span>Recarga la página para intentarlo de nuevo.</span>
+        </div>
+      )}
 
-        <article className="summary-card">
-          <div className="summary-icon">
-            <LinkIcon />
-          </div>
-
-          <div>
-            <span className="summary-label">Autenticación</span>
-            <strong>GitHub conectado</strong>
-            <p>@{githubLogin}</p>
-          </div>
-        </article>
-
-        <article className="summary-card">
-          <div className="summary-icon">
-            <UsersIcon />
-          </div>
-
-          <div>
-            <span className="summary-label">Usuarios</span>
-            <strong>Gestión institucional</strong>
-            <p>
-              Desde aquí podrás asignar los roles de profesor y estudiante.
-            </p>
-          </div>
-        </article>
-      </section>
-
-      <section className="admin-main-grid">
-        <article className="admin-panel">
-          <div className="admin-panel-heading">
-            <div>
-              <p className="page-kicker">CONFIGURACIÓN INICIAL</p>
-              <h2>Prepara tu institución</h2>
-            </div>
-          </div>
-
-          <div className="setup-list">
-            <div className="setup-item complete">
-              <div className="setup-state">✓</div>
+      {state.status === 'ready' && (
+        <>
+          <section className="admin-summary-grid">
+            <article className="summary-card">
               <div>
-                <strong>Institución creada</strong>
-                <span>{institutionName}</span>
-              </div>
-            </div>
-
-            <div className="setup-item complete">
-              <div className="setup-state">✓</div>
-              <div>
-                <strong>Administrador configurado</strong>
-                <span>@{githubLogin}</span>
-              </div>
-            </div>
-
-            <div className="setup-item">
-              <div className="setup-state">3</div>
-              <div>
-                <strong>Agregar profesores y estudiantes</strong>
-                <span>
-                  Los usuarios aparecerán cuando inicien sesión con GitHub y
-                  luego podrán recibir un rol académico.
+                <span className="summary-label">
+                  Solicitudes pendientes
                 </span>
+                <strong>{state.overview.counts.pendingRequests}</strong>
+                {state.overview.counts.pendingRequests > 0 && (
+                  <button
+                    type="button"
+                    className="link-button"
+                    onClick={onOpenRequests}
+                  >
+                    Revisar solicitudes
+                  </button>
+                )}
+              </div>
+            </article>
+
+            <article className="summary-card">
+              <div>
+                <span className="summary-label">Profesores</span>
+                <strong>{state.overview.counts.teachers}</strong>
+                <p>Con acceso activo</p>
+              </div>
+            </article>
+
+            <article className="summary-card">
+              <div>
+                <span className="summary-label">Estudiantes</span>
+                <strong>{state.overview.counts.students}</strong>
+                <p>Con acceso activo</p>
+              </div>
+            </article>
+          </section>
+
+          {state.overview.domains.length === 0 && (
+            <p className="field-hint">
+              Aún no hay dominios institucionales registrados.
+              Agrégalos en «Institución» para ver una pista al
+              revisar solicitudes.
+            </p>
+          )}
+
+          <section className="admin-panel">
+            <div className="admin-panel-heading">
+              <div>
+                <p className="page-kicker">REGISTRO</p>
+                <h2>Actividad reciente</h2>
               </div>
             </div>
-          </div>
-        </article>
 
-        <article className="admin-panel">
-          <div className="admin-panel-heading">
-            <div>
-              <p className="page-kicker">IDENTIDADES</p>
-              <h2>Roles académicos</h2>
-            </div>
-          </div>
-
-          <div className="empty-admin-state">
-            <div className="empty-admin-icon">
-              <UsersIcon />
-            </div>
-
-            <strong>Gestiona los usuarios desde VMAT</strong>
-
-            <p>
-              Las cuentas se autentican con GitHub, pero los permisos
-              académicos se asignan por separado desde la institución.
-            </p>
-          </div>
-        </article>
-      </section>
+            {state.entries.length === 0 ? (
+              <div className="empty-admin-state">
+                <strong>Todavía no hay actividad</strong>
+                <p>
+                  Aquí aparecerán las solicitudes, decisiones y
+                  cambios de rol.
+                </p>
+              </div>
+            ) : (
+              <ol className="audit-log">
+                {state.entries.map(entry => (
+                  <li key={entry.id}>
+                    <span>{describe(entry)}</span>
+                    {entry.action === 'REQUEST_DENIED' &&
+                      entry.details && (
+                        <span className="audit-detail">
+                          Motivo: {entry.details}
+                        </span>
+                      )}
+                    <time dateTime={entry.createdAt}>
+                      {formatDate(entry.createdAt)}
+                    </time>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </section>
+        </>
+      )}
     </div>
   );
 }

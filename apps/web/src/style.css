@@ -2034,7 +2034,7 @@ body {
     color 160ms ease;
 }
 
-/* ---------- Access requests ---------- */
+/* ---------- Access requests and institution admin ---------- */
 
 .access-requests-page {
   width: min(880px, 100%);
@@ -2059,9 +2059,15 @@ body {
   display: grid;
   gap: 16px;
   padding: 24px;
-  border: 1px solid #e3e8e4;
+  border: 1px solid var(--vmat-border);
   border-radius: 12px;
-  background: #ffffff;
+  background: var(--vmat-surface);
+}
+
+.access-form.plain {
+  padding: 0;
+  border: 0;
+  background: none;
 }
 
 .access-form-heading h2 {
@@ -2081,7 +2087,7 @@ body {
 
 .form-field label,
 .deny-reason-form label {
-  color: #303834;
+  color: var(--vmat-text-strong);
   font-size: 0.78rem;
   font-weight: 700;
 }
@@ -2089,14 +2095,16 @@ body {
 .form-field input,
 .form-field select,
 .form-field textarea,
-.deny-reason-form textarea {
+.deny-reason-form textarea,
+.domain-form input,
+.institution-select {
   width: 100%;
   min-height: 38px;
   padding: 8px 10px;
-  border: 1px solid #cfd8d2;
+  border: 1px solid var(--vmat-border);
   border-radius: 8px;
-  background: #ffffff;
-  color: inherit;
+  background: var(--vmat-surface);
+  color: var(--vmat-text);
   font: inherit;
   font-size: 0.85rem;
 }
@@ -2105,20 +2113,23 @@ body {
 .form-field select:focus-visible,
 .form-field textarea:focus-visible,
 .deny-reason-form textarea:focus-visible,
+.domain-form input:focus-visible,
+.institution-select:focus-visible,
 .institution-results button:focus-visible {
-  outline: 2px solid #169c5a;
+  outline: 2px solid var(--vmat-green);
   outline-offset: 1px;
 }
 
 .field-hint {
-  color: #69766f;
+  margin: 0;
+  color: var(--vmat-text-muted);
   font-size: 0.75rem;
 }
 
 .field-error,
 .form-error {
   margin: 0;
-  color: #9a4c4c;
+  color: var(--vmat-danger-text);
   font-size: 0.78rem;
 }
 
@@ -2126,7 +2137,7 @@ body {
   margin: 0;
   padding: 0;
   list-style: none;
-  border: 1px solid #e3e8e4;
+  border: 1px solid var(--vmat-border);
   border-radius: 8px;
   max-height: 220px;
   overflow-y: auto;
@@ -2136,8 +2147,9 @@ body {
   width: 100%;
   padding: 9px 12px;
   border: 0;
-  border-top: 1px solid #edf0ee;
-  background: #ffffff;
+  border-top: 1px solid var(--vmat-border-soft);
+  background: var(--vmat-surface);
+  color: var(--vmat-text);
   text-align: left;
   font-size: 0.85rem;
 }
@@ -2147,7 +2159,7 @@ body {
 }
 
 .institution-results button:hover {
-  background: #eff9f3;
+  background: var(--vmat-green-soft-2);
 }
 
 .selected-institution {
@@ -2156,21 +2168,23 @@ body {
   justify-content: space-between;
   gap: 12px;
   padding: 9px 12px;
-  border: 1px solid #cfe5d7;
+  border: 1px solid var(--vmat-border);
   border-radius: 8px;
-  background: #eff9f3;
+  background: var(--vmat-green-soft-2);
 }
 
 .link-button {
+  padding: 0;
   border: 0;
   background: none;
-  color: #187348;
+  color: var(--vmat-green-text);
   font-weight: 700;
   text-decoration: underline;
 }
 
 .form-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
 }
@@ -2185,19 +2199,19 @@ body {
 }
 
 .primary-action {
-  border: 1px solid #168c51;
-  background: #169c5a;
+  border: 1px solid var(--vmat-green);
+  background: var(--vmat-green);
   color: #ffffff;
 }
 
 .primary-action:hover:not(:disabled) {
-  background: #12864c;
+  background: var(--vmat-green-hover);
 }
 
 .secondary-action {
-  border: 1px solid #cfd8d2;
-  background: #ffffff;
-  color: #303834;
+  border: 1px solid var(--vmat-border);
+  background: var(--vmat-surface);
+  color: var(--vmat-text-strong);
 }
 
 .primary-action:disabled,
@@ -2211,7 +2225,7 @@ body {
   align-items: center;
   gap: 14px;
   padding: 14px 4px;
-  border-top: 1px solid #edf0ee;
+  border-top: 1px solid var(--vmat-border-soft);
 }
 
 .my-request-row:first-child {
@@ -2225,38 +2239,42 @@ body {
 }
 
 .my-request-main span {
-  color: #69766f;
+  color: var(--vmat-text-muted);
   font-size: 0.75rem;
 }
 
 .my-request-main .decision-reason {
-  color: #684545;
+  color: var(--vmat-danger-text);
 }
 
-.status-pill.request-approved {
-  background: #eaf7ef;
-  color: #16804b;
+.status-pill.request-approved,
+.status-pill.domain-match {
+  background: var(--vmat-green-soft);
+  color: var(--vmat-green-text);
 }
 
 .status-pill.request-denied {
-  background: #fbefef;
-  color: #9a4c4c;
+  background: var(--vmat-danger-bg);
+  color: var(--vmat-danger-text);
 }
 
 .status-pill.request-cancelled {
-  background: #eef1ef;
-  color: #69766f;
+  background: var(--vmat-surface-soft);
+  color: var(--vmat-text-muted);
 }
 
-.access-request-item {
-  border-top: 1px solid #edf0ee;
+.access-request-item,
+.member-item {
+  border-top: 1px solid var(--vmat-border-soft);
 }
 
-.access-request-item:first-child {
+.access-request-item:first-child,
+.member-item:first-child {
   border-top: 0;
 }
 
-.access-request-item .access-request-row {
+.access-request-item .access-request-row,
+.member-item .member-row {
   border-top: 0;
 }
 
@@ -2273,25 +2291,124 @@ body {
 }
 
 .access-request-details dt {
-  color: #8b938e;
+  color: var(--vmat-text-faint);
   font-weight: 700;
 }
 
 .access-request-details dd {
   margin: 2px 0 0;
-  color: #303834;
+  color: var(--vmat-text-strong);
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
 
-.deny-reason-form {
+.deny-reason-form,
+.member-confirm {
   display: grid;
   gap: 8px;
   margin: 0 4px 16px;
   padding: 14px;
-  border: 1px solid #eadada;
+  border: 1px solid var(--vmat-danger-border);
   border-radius: 10px;
-  background: #fffafa;
+  background: var(--vmat-danger-surface);
+  font-size: 0.8rem;
+}
+
+.member-item .member-row {
+  grid-template-columns:
+    minmax(230px, 1fr)
+    130px
+    minmax(160px, 0.6fr)
+    auto;
+}
+
+.member-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.domain-list {
+  margin: 12px 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+
+.domain-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--vmat-border-soft);
+  border-radius: 8px;
+  font-size: 0.85rem;
+}
+
+.domain-form {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.audit-log {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.audit-log li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 16px;
+  padding: 10px 4px;
+  border-top: 1px solid var(--vmat-border-soft);
+  font-size: 0.8rem;
+}
+
+.audit-log li:first-child {
+  border-top: 0;
+}
+
+.audit-log time {
+  color: var(--vmat-text-faint);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.audit-log .audit-detail {
+  grid-column: 1 / -1;
+  color: var(--vmat-text-muted);
+  font-size: 0.74rem;
+}
+
+.institution-select {
+  min-height: 32px;
+  padding: 4px 8px;
+  font-size: 0.78rem;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .member-item .member-row {
+    grid-template-columns: minmax(220px, 1fr) auto;
+  }
+
+  .member-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 640px) {
@@ -2306,5 +2423,13 @@ body {
   .my-request-row .deny-button {
     grid-column: 1 / -1;
     justify-self: start;
+  }
+
+  .domain-form {
+    flex-direction: column;
+  }
+
+  .audit-log li {
+    grid-template-columns: 1fr;
   }
 }

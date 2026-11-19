@@ -29,4 +29,8 @@ export {
   type PendingAccessRequest,
   type PendingAccessRequestsResult,
   type AccessDecisionResult,
+  type AuditLogEntry,
+  type InstitutionDomain,
+  type InstitutionOverview,
+  type MembershipChangeResult,
 } from './admin.js';

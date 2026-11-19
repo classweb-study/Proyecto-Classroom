@@ -1,4 +1,9 @@
-import { StrictMode, useEffect, useState } from 'react';
+import {
+  StrictMode,
+  useCallback,
+  useEffect,
+  useState,
+} from 'react';
 import { createRoot } from 'react-dom/client';
 
 import {
@@ -9,6 +14,25 @@ import { AdminHomePage } from './pages/AdminHomePage';
 import { AdminUsersPage } from './pages/AdminUsersPage';
 import { AdminMembersPage } from './pages/AdminMembersPage';
 import { AccessRequestsPage } from './pages/AccessRequestsPage';
+import { AdminInstitutionPage } from './pages/AdminInstitutionPage';
+
+const ACTIVE_INSTITUTION_KEY = 'vmat-active-institution';
+
+function readStoredInstitution(): string | null {
+  try {
+    return window.localStorage.getItem(ACTIVE_INSTITUTION_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function storeInstitution(institutionId: string) {
+  try {
+    window.localStorage.setItem(ACTIVE_INSTITUTION_KEY, institutionId);
+  } catch {
+    // Remembering the choice is a convenience; the switch still works without it.
+  }
+}
 
 import './style.css';
 
@@ -57,40 +81,6 @@ function GitHubIcon() {
   );
 }
 
-function EmptyAdminPage({
-  title,
-  description,
-}: {
-  title: string;
-  description: string;
-}) {
-  return (
-    <div className="admin-page">
-      <section className="page-heading">
-        <div>
-          <p className="page-kicker">ADMINISTRACIÓN</p>
-          <h1>{title}</h1>
-          <p>{description}</p>
-        </div>
-      </section>
-
-      <section className="admin-panel">
-        <div className="empty-admin-state large">
-          <div className="empty-admin-letter">
-            {title.charAt(0)}
-          </div>
-
-          <strong>Aún no hay información para mostrar</strong>
-
-          <p>
-            Esta sección se conectará con datos reales de VMAT.
-          </p>
-        </div>
-      </section>
-    </div>
-  );
-}
-
 function App() {
   const [auth, setAuth] = useState<AuthState>({
     status: 'loading',
@@ -99,13 +89,19 @@ function App() {
   const [loggingOut, setLoggingOut] = useState(false);
   const [activePage, setActivePage] =
     useState<AdminPage>('home');
+  const [activeInstitutionId, setActiveInstitutionId] =
+    useState<string | null>(readStoredInstitution);
 
-  useEffect(() => {
-    const controller = new AbortController();
+  function switchInstitution(institutionId: string) {
+    setActiveInstitutionId(institutionId);
+    storeInstitution(institutionId);
+    setActivePage('home');
+  }
 
-    fetch('/me', {
+  const loadSession = useCallback((signal?: AbortSignal) => {
+    return fetch('/me', {
       credentials: 'same-origin',
-      signal: controller.signal,
+      signal,
     })
       .then(async response => {
         if (response.status === 401) {
@@ -136,9 +132,13 @@ function App() {
 
         setAuth({ status: 'error' });
       });
-
-    return () => controller.abort();
   }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadSession(controller.signal);
+    return () => controller.abort();
+  }, [loadSession]);
 
   async function logout() {
     setLoggingOut(true);
@@ -228,7 +228,26 @@ function App() {
   }
 
   const { user } = auth;
-  const institution = user.institutions[0];
+  const institution =
+    user.institutions.find(
+      item => item.id === activeInstitutionId,
+    ) ?? user.institutions[0];
+
+  const institutionSwitcher =
+    user.institutions.length > 1 && institution ? (
+      <select
+        className="institution-select"
+        aria-label="Institución activa"
+        value={institution.id}
+        onChange={event => switchInstitution(event.target.value)}
+      >
+        {user.institutions.map(item => (
+          <option key={item.id} value={item.id}>
+            {item.name}
+          </option>
+        ))}
+      </select>
+    ) : null;
 
   if (!institution) {
     return (
@@ -252,6 +271,8 @@ function App() {
             interfaz para su rol todavía no está habilitada en
             esta etapa del desarrollo.
           </p>
+
+          {institutionSwitcher}
 
           <button
             type="button"
@@ -284,6 +305,7 @@ function App() {
             institutionId={institution.id}
             institutionName={institution.name}
             role="TEACHER"
+            currentUserId={user.id}
           />
         );
 
@@ -293,14 +315,15 @@ function App() {
             institutionId={institution.id}
             institutionName={institution.name}
             role="STUDENT"
+            currentUserId={user.id}
           />
         );
 
       case 'institution':
         return (
-          <EmptyAdminPage
-            title="Institución"
-            description="Consulta y administra la configuración institucional."
+          <AdminInstitutionPage
+            institutionId={institution.id}
+            onInstitutionRenamed={() => void loadSession()}
           />
         );
 
@@ -308,8 +331,9 @@ function App() {
       default:
         return (
           <AdminHomePage
+            institutionId={institution.id}
             institutionName={institution.name}
-            githubLogin={user.github.login}
+            onOpenRequests={() => setActivePage('users')}
           />
         );
     }
@@ -322,6 +346,9 @@ function App() {
       githubLogin={user.github.login}
       avatarUrl={user.github.avatarUrl}
       institutionName={institution.name}
+      institutions={user.institutions}
+      activeInstitutionId={institution.id}
+      onSwitchInstitution={switchInstitution}
       roles={institution.roles}
       loggingOut={loggingOut}
       onLogout={logout}

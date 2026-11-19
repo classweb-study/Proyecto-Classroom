@@ -77,6 +77,7 @@ function createDependencies() {
               institutionalEmail: string | null;
               institutionalCode: string | null;
               requestReason: string | null;
+              domainMatch: boolean;
               createdAt: Date;
             }>;
           }
@@ -154,6 +155,27 @@ function createDependencies() {
       > => ({
         status: 'NOT_FOUND',
       }),
+    ),
+    getInstitutionOverview: vi.fn(
+      async () => ({ status: 'FORBIDDEN' as const }),
+    ),
+    updateInstitution: vi.fn(
+      async () => ({ status: 'FORBIDDEN' as const }),
+    ),
+    addInstitutionDomain: vi.fn(
+      async () => ({ status: 'FORBIDDEN' as const }),
+    ),
+    removeInstitutionDomain: vi.fn(
+      async () => ({ status: 'FORBIDDEN' as const }),
+    ),
+    revokeMembership: vi.fn(
+      async () => ({ status: 'FORBIDDEN' as const }),
+    ),
+    changeMembershipRole: vi.fn(
+      async () => ({ status: 'FORBIDDEN' as const }),
+    ),
+    listAuditLog: vi.fn(
+      async () => ({ status: 'FORBIDDEN' as const }),
     ),
   };
 
@@ -633,6 +655,7 @@ describe('Auth v1 HTTP boundary', () => {
           institutionalEmail: null,
           institutionalCode: null,
           requestReason: null,
+          domainMatch: false,
           createdAt: new Date('2026-10-01T20:00:00.000Z'),
         },
       ],

@@ -132,6 +132,7 @@ export const institutions = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
     name: text('name').notNull(),
     slug: text('slug').notNull(),
+    description: text('description'),
 
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
@@ -345,5 +346,70 @@ export const accessRequestEvents = pgTable(
   },
   (table) => [
     index('access_request_events_request_idx').on(table.requestId),
+  ],
+);
+
+export const institutionDomains = pgTable(
+  'institution_domains',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+
+    institutionId: uuid('institution_id')
+      .notNull()
+      .references(() => institutions.id),
+
+    domain: text('domain').notNull(),
+
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('institution_domains_institution_domain_unique').on(
+      table.institutionId,
+      table.domain,
+    ),
+  ],
+);
+
+export const institutionAuditActionEnum = pgEnum(
+  'institution_audit_action',
+  [
+    'MEMBERSHIP_REVOKED',
+    'MEMBERSHIP_ROLE_CHANGED',
+    'INSTITUTION_UPDATED',
+    'DOMAIN_ADDED',
+    'DOMAIN_REMOVED',
+  ],
+);
+
+export const institutionAuditEvents = pgTable(
+  'institution_audit_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+
+    institutionId: uuid('institution_id')
+      .notNull()
+      .references(() => institutions.id),
+
+    actorUserId: uuid('actor_user_id')
+      .notNull()
+      .references(() => users.id),
+
+    action: institutionAuditActionEnum('action').notNull(),
+
+    targetUserId: uuid('target_user_id').references(() => users.id),
+
+    details: text('details'),
+
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index('institution_audit_events_institution_created_idx').on(
+      table.institutionId,
+      table.createdAt,
+    ),
   ],
 );

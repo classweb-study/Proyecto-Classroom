@@ -1,4 +1,7 @@
-import Fastify from 'fastify';
+import Fastify, {
+  type FastifyReply,
+  type FastifyRequest,
+} from 'fastify';
 import type {
   createAdminRepository,
   createAuthRepository,
@@ -63,6 +66,37 @@ function validEmail(value: unknown): string | null {
   return email && EMAIL_PATTERN.test(email)
     ? email.toLowerCase()
     : null;
+}
+
+const DOMAIN_PATTERN =
+  /^(?=.{3,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+
+const ADMIN_RESULT_ERRORS: Record<string, [number, string]> = {
+  FORBIDDEN: [403, 'FORBIDDEN'],
+  NOT_FOUND: [404, 'NOT_FOUND'],
+  SELF: [409, 'CANNOT_MODIFY_OWN_MEMBERSHIP'],
+  SAME_ROLE: [409, 'ROLE_UNCHANGED'],
+  DUPLICATE: [409, 'DOMAIN_ALREADY_EXISTS'],
+};
+
+function sendAdminResult<T extends { status: string }>(
+  reply: FastifyReply,
+  result: T,
+  body: (result: Extract<T, { status: 'OK' }>) => unknown,
+  successCode = 200,
+) {
+  if (result.status !== 'OK') {
+    const [code, error] = ADMIN_RESULT_ERRORS[result.status] ?? [
+      500,
+      'INTERNAL_ERROR',
+    ];
+
+    return reply.code(code).send({ error });
+  }
+
+  return reply
+    .code(successCode)
+    .send(body(result as Extract<T, { status: 'OK' }>));
 }
 
 function isAccessRole(
@@ -132,6 +166,36 @@ export function createApp(dependencies?: AppDependencies) {
     return validOpaqueToken(secret)
       ? auth.findSession(secret)
       : null;
+  }
+
+  async function adminRouteActor(
+    request: FastifyRequest<{ Params: Record<string, string> }>,
+    reply: FastifyReply,
+    idParams: string[],
+  ) {
+    const mutation = request.method !== 'GET';
+
+    if (
+      mutation &&
+      !validOrigin(request.headers.origin, frontendOrigin)
+    ) {
+      reply.code(403).send({ error: 'ORIGIN_FORBIDDEN' });
+      return null;
+    }
+
+    if (!idParams.every(name => validUuid(request.params[name]))) {
+      reply.code(400).send({ error: 'INVALID_REQUEST' });
+      return null;
+    }
+
+    const user = await sessionUser(request.headers.cookie);
+
+    if (!user) {
+      reply.code(401).send({ error: 'UNAUTHENTICATED' });
+      return null;
+    }
+
+    return user;
   }
 
   app.setErrorHandler((error, _request, reply) => {
@@ -811,6 +875,208 @@ export function createApp(dependencies?: AppDependencies) {
       return {
         decision: result,
       };
+    },
+  );
+
+  app.get<{ Params: { institutionId: string } }>(
+    '/admin/institutions/:institutionId',
+    async (request, reply) => {
+      const user = await adminRouteActor(request, reply, [
+        'institutionId',
+      ]);
+
+      if (!user) return reply;
+
+      const result = await admin.getInstitutionOverview(
+        user.userId,
+        request.params.institutionId,
+      );
+
+      return sendAdminResult(reply, result, overview => ({
+        institution: overview.institution,
+        domains: overview.domains,
+        counts: overview.counts,
+      }));
+    },
+  );
+
+  app.patch<{
+    Params: { institutionId: string };
+    Body: { name?: unknown; description?: unknown } | undefined;
+  }>(
+    '/admin/institutions/:institutionId',
+    async (request, reply) => {
+      const user = await adminRouteActor(request, reply, [
+        'institutionId',
+      ]);
+
+      if (!user) return reply;
+
+      const name = boundedText(request.body?.name, 2, 120);
+      const rawDescription = request.body?.description;
+      const description =
+        rawDescription === undefined ||
+        rawDescription === null ||
+        rawDescription === ''
+          ? null
+          : boundedText(rawDescription, 1, 2000);
+
+      if (!name || (rawDescription && !description)) {
+        return reply.code(400).send({
+          error: 'INVALID_INSTITUTION',
+        });
+      }
+
+      const result = await admin.updateInstitution({
+        actorUserId: user.userId,
+        institutionId: request.params.institutionId,
+        name,
+        description,
+      });
+
+      return sendAdminResult(reply, result, () => ({
+        status: 'UPDATED',
+      }));
+    },
+  );
+
+  app.post<{
+    Params: { institutionId: string };
+    Body: { domain?: unknown } | undefined;
+  }>(
+    '/admin/institutions/:institutionId/domains',
+    async (request, reply) => {
+      const user = await adminRouteActor(request, reply, [
+        'institutionId',
+      ]);
+
+      if (!user) return reply;
+
+      const raw = request.body?.domain;
+      const domain =
+        typeof raw === 'string'
+          ? raw.trim().toLowerCase().replace(/^@/, '')
+          : '';
+
+      if (!DOMAIN_PATTERN.test(domain)) {
+        return reply.code(400).send({
+          error: 'INVALID_DOMAIN',
+        });
+      }
+
+      const result = await admin.addInstitutionDomain({
+        actorUserId: user.userId,
+        institutionId: request.params.institutionId,
+        domain,
+      });
+
+      return sendAdminResult(
+        reply,
+        result,
+        added => ({ domain: added.domain }),
+        201,
+      );
+    },
+  );
+
+  app.delete<{
+    Params: { institutionId: string; domainId: string };
+  }>(
+    '/admin/institutions/:institutionId/domains/:domainId',
+    async (request, reply) => {
+      const user = await adminRouteActor(request, reply, [
+        'institutionId',
+        'domainId',
+      ]);
+
+      if (!user) return reply;
+
+      const result = await admin.removeInstitutionDomain({
+        actorUserId: user.userId,
+        institutionId: request.params.institutionId,
+        domainId: request.params.domainId,
+      });
+
+      return sendAdminResult(reply, result, () => ({
+        status: 'REMOVED',
+      }));
+    },
+  );
+
+  app.post<{
+    Params: { institutionId: string; membershipId: string };
+  }>(
+    '/admin/institutions/:institutionId/members/:membershipId/revoke',
+    async (request, reply) => {
+      const user = await adminRouteActor(request, reply, [
+        'institutionId',
+        'membershipId',
+      ]);
+
+      if (!user) return reply;
+
+      const result = await admin.revokeMembership({
+        actorUserId: user.userId,
+        institutionId: request.params.institutionId,
+        membershipId: request.params.membershipId,
+      });
+
+      return sendAdminResult(reply, result, () => ({
+        status: 'REVOKED',
+      }));
+    },
+  );
+
+  app.post<{
+    Params: { institutionId: string; membershipId: string };
+    Body: { role?: unknown } | undefined;
+  }>(
+    '/admin/institutions/:institutionId/members/:membershipId/role',
+    async (request, reply) => {
+      const user = await adminRouteActor(request, reply, [
+        'institutionId',
+        'membershipId',
+      ]);
+
+      if (!user) return reply;
+
+      const role = request.body?.role;
+
+      if (!isAccessRole(role)) {
+        return reply.code(400).send({ error: 'INVALID_ROLE' });
+      }
+
+      const result = await admin.changeMembershipRole({
+        actorUserId: user.userId,
+        institutionId: request.params.institutionId,
+        membershipId: request.params.membershipId,
+        role,
+      });
+
+      return sendAdminResult(reply, result, () => ({
+        status: 'ROLE_CHANGED',
+        role,
+      }));
+    },
+  );
+
+  app.get<{ Params: { institutionId: string } }>(
+    '/admin/institutions/:institutionId/audit-log',
+    async (request, reply) => {
+      const user = await adminRouteActor(request, reply, [
+        'institutionId',
+      ]);
+
+      if (!user) return reply;
+
+      const result = await admin.listAuditLog(
+        user.userId,
+        request.params.institutionId,
+      );
+
+      return sendAdminResult(reply, result, log => ({
+        entries: log.entries,
+      }));
     },
   );
 
