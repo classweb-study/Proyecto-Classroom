@@ -1,11 +1,11 @@
 import { test, expect } from '@playwright/test';
-test('renders foundation and actual API liveness', async ({ page }) => {
+test('renders the GitHub sign-in screen for a controlled anonymous session', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Plataforma de aula' })).toBeVisible();
-  await expect(page.getByRole('status')).toHaveText('API activa');
+  await expect(page.getByRole('heading', { name: 'Tu aula, conectada con GitHub.' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Continuar con GitHub' })).toHaveAttribute('href', '/auth/github');
 });
-test('reports unavailable API truthfully', async ({ page }) => {
-  await page.route('**/health/live', route => route.abort());
+test('reports an unavailable session API truthfully', async ({ page }) => {
+  await page.route('**/me', route => route.abort());
   await page.goto('/');
-  await expect(page.getByRole('status')).toHaveText('API no disponible');
+  await expect(page.getByRole('heading', { name: 'No pudimos cargar tu sesión.' })).toBeVisible();
 });

@@ -64,6 +64,10 @@ try {
     frontendOrigin,
     secureCookies,
     defaultInstitutionSlug: 'unisabana',
+    checkReadiness: async () => {
+      await database?.pool.query('SELECT 1');
+      return true;
+    },
   });
 
   const close = async () => {

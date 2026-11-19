@@ -103,9 +103,14 @@ if (missingEnvironment.length > 0) {
       process.env.VERCEL_ENV === 'production' ||
       process.env.NODE_ENV === 'production',
     defaultInstitutionSlug: 'unisabana',
+    checkReadiness: async () => {
+      await pool.query('SELECT 1');
+      return true;
+    },
   });
 }
 
-app.listen({
+await app.listen({
   port: Number(process.env.PORT ?? 3000),
+  host: '0.0.0.0',
 });

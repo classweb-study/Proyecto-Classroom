@@ -38,6 +38,8 @@ export interface AppDependencies {
   frontendOrigin: string;
   secureCookies: boolean;
   defaultInstitutionSlug: string;
+  /** Dependency probe; its result is intentionally separate from liveness. */
+  checkReadiness?: () => Promise<boolean>;
 }
 
 function validUuid(value: string | undefined): value is string {
@@ -75,6 +77,28 @@ export function createApp(dependencies?: AppDependencies) {
   const app = Fastify({ logger: false });
 
   app.get('/health/live', async () => liveness);
+
+  app.get('/health/ready', async (_request, reply) => {
+    if (!dependencies?.checkReadiness) {
+      return reply.code(503).send({
+        status: 'unavailable',
+        scope: 'configuration',
+      });
+    }
+
+    try {
+      if (await dependencies.checkReadiness()) {
+        return { status: 'ready' as const, scope: 'dependencies' as const };
+      }
+    } catch {
+      // Keep infrastructure details in protected runtime logs.
+    }
+
+    return reply.code(503).send({
+      status: 'unavailable',
+      scope: 'dependencies',
+    });
+  });
 
   /*
    * Keeping dependencies optional preserves the process-liveness app used
