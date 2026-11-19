@@ -169,7 +169,7 @@ export function AdminHomePage({
               <UsersIcon />
             </div>
 
-            <strong>Gestiona los usuarios desde VMAT</strong>
+            <strong>Gestiona los usuarios desde WebClass</strong>
 
             <p>
               Las cuentas se autentican con GitHub, pero los permisos

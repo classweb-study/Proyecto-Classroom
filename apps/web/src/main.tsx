@@ -92,7 +92,7 @@ function EmptyAdminPage({
           <strong>Aún no hay información para mostrar</strong>
 
           <p>
-            Esta sección se conectará con datos reales de VMAT.
+            Esta sección se conectará con datos reales de WebClass.
           </p>
         </div>
       </section>
@@ -175,7 +175,7 @@ function App() {
       <main className="center-screen">
         <div>
           <div className="loader" />
-          <p className="muted">Cargando VMAT…</p>
+          <p className="muted">Cargando WebClass…</p>
         </div>
       </main>
     );
@@ -185,9 +185,9 @@ function App() {
     return (
       <main className="auth-page">
         <section className="auth-card">
-          <div className="brand-mark">V</div>
+          <div className="brand-mark">W</div>
 
-          <p className="eyebrow">VMAT CLASSROOM</p>
+          <p className="eyebrow">WebClass</p>
 
           <h1>Tu aula, conectada con GitHub.</h1>
 
@@ -206,7 +206,7 @@ function App() {
 
           <p className="auth-note">
             GitHub autentica tu cuenta. Los permisos académicos
-            se gestionan de forma independiente en VMAT.
+            se gestionan de forma independiente en WebClass.
           </p>
         </section>
       </main>
@@ -217,7 +217,7 @@ function App() {
     return (
       <main className="center-screen">
         <div className="error-card">
-          <p className="eyebrow">VMAT</p>
+          <p className="eyebrow">WebClass</p>
           <h1>No pudimos cargar tu sesión.</h1>
 
           <p className="muted">
@@ -244,7 +244,7 @@ function App() {
     return (
       <main className="center-screen">
         <div className="error-card">
-          <p className="eyebrow">VMAT</p>
+          <p className="eyebrow">WebClass</p>
           <h1>Solicitud pendiente</h1>
 
           <p className="muted">
@@ -278,7 +278,7 @@ function App() {
     return (
       <main className="center-screen">
         <div className="error-card">
-          <p className="eyebrow">VMAT</p>
+          <p className="eyebrow">WebClass</p>
           <h1>Acceso no autorizado</h1>
 
           <p className="muted">
@@ -305,7 +305,7 @@ function App() {
     return (
       <main className="center-screen">
         <div className="error-card">
-          <p className="eyebrow">VMAT</p>
+          <p className="eyebrow">WebClass</p>
           <h1>Cuenta sin institución</h1>
 
           <p className="muted">
@@ -332,7 +332,7 @@ function App() {
     return (
       <main className="center-screen">
         <div className="error-card">
-          <p className="eyebrow">VMAT</p>
+          <p className="eyebrow">WebClass</p>
           <h1>Perfil académico registrado</h1>
 
           <p className="muted">

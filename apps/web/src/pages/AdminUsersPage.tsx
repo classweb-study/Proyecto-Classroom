@@ -202,7 +202,7 @@ export function AdminUsersPage({
               <div className="empty-admin-letter">U</div>
               <strong>No hay solicitudes pendientes</strong>
               <p>
-                Cuando una nueva cuenta inicie sesión en VMAT,
+                Cuando una nueva cuenta inicie sesión en WebClass,
                 aparecerá aquí hasta que decidas aprobarla o
                 denegarla.
               </p>
