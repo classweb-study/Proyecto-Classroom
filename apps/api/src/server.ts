@@ -102,7 +102,12 @@ if (missingEnvironment.length > 0) {
   });
 }
 
-await app.listen({
+void app.listen({
   port: Number(process.env.PORT ?? 3000),
   host: '0.0.0.0',
+}).catch(error => {
+  app.log.error(error);
+  process.exitCode = 1;
 });
+
+export default app;
