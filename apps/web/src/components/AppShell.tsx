@@ -327,11 +327,11 @@ export function AppShell({
               alt=""
             />
           ) : (
-            <div className="vmat-logo">V</div>
+            <div className="vmat-logo">W</div>
           )}
 
           <div>
-            <strong>VMAT</strong>
+            <strong>WebClass</strong>
             <span>Classroom</span>
           </div>
         </div>
@@ -421,7 +421,7 @@ export function AppShell({
       <div className="vmat-workspace">
         <header className="vmat-topbar">
           <div className="topbar-context">
-            <span>VMAT</span>
+            <span>WebClass</span>
             <strong>{institutionName}</strong>
           </div>
 

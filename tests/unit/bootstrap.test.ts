@@ -12,6 +12,18 @@ describe('executable boundaries', () => {
       expect((await app.inject('/unknown')).statusCode).toBe(404);
     } finally { await app.close(); }
   });
+  it('keeps dependency readiness distinct from process liveness', async () => {
+    const app = createApp({
+      frontendOrigin: 'http://127.0.0.1:5173',
+      checkReadiness: async () => false,
+    } as never);
+    try {
+      expect((await app.inject('/health/live')).statusCode).toBe(200);
+      const ready = await app.inject('/health/ready');
+      expect(ready.statusCode).toBe(503);
+      expect(ready.json()).toEqual({ status: 'unavailable', scope: 'dependencies' });
+    } finally { await app.close(); }
+  });
   it('rejects invalid configuration without echoing values', () => {
     for (const value of ['', '0', '65536', '1.5', 'secret']) expect(() => port(value)).toThrow('Invalid PORT');
     expect(port(undefined)).toBe(3001);

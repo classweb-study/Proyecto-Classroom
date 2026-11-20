@@ -1,0 +1,9 @@
+.local/
+.agents/
+.claude/
+_bmad/
+_bmad-output/
+playwright-report/
+test-results/
+apps/*/dist/
+packages/*/dist/

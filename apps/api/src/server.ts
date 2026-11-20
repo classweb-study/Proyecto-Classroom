@@ -1,26 +1,18 @@
 import { Pool } from 'pg';
+import type {
+  IncomingMessage,
+  ServerResponse,
+} from 'node:http';
 
 import {
-  createAdminRepository,
-} from '../../../packages/database/src/admin.js';
-import {
   createAcademicRepository,
-} from '../../../packages/database/src/academic.js';
-import {
-  createPlatformRepository,
-} from '../../../packages/database/src/platform.js';
-import {
+  createAdminRepository,
   createAuthRepository,
-} from '../../../packages/database/src/auth.js';
-import {
   createInstitutionAccessRepository,
-} from '../../../packages/database/src/access.js';
-import {
-  createGitHubAuth,
-} from '../../../packages/github/src/auth.js';
-import {
-  databaseUrl,
-} from '../../../packages/shared/src/index.js';
+  createPlatformRepository,
+} from '@classroom/database';
+import { createGitHubAuth } from '@classroom/github';
+import { databaseUrl } from '@classroom/shared';
 
 import { createApp } from './app.js';
 
@@ -116,9 +108,24 @@ if (missingEnvironment.length > 0) {
     secureCookies:
       process.env.VERCEL_ENV === 'production' ||
       process.env.NODE_ENV === 'production',
+    checkReadiness: async () => {
+      await pool.query('SELECT 1');
+      return true;
+    },
   });
 }
 
-app.listen({
-  port: Number(process.env.PORT ?? 3000),
-});
+/*
+ * Vercel Functions own the HTTP listener. Starting Fastify with `listen()`
+ * inside a Function leaves its request lifecycle detached from Vercel's
+ * invocation and can cause requests to hang. Prepare Fastify once, then
+ * delegate each Vercel request to its underlying Node server.
+ */
+await app.ready();
+
+export default function handler(
+  request: IncomingMessage,
+  response: ServerResponse,
+): void {
+  app.server.emit('request', request, response);
+}

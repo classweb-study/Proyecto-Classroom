@@ -180,7 +180,7 @@ export function ActivityForm({
             onChange={event => setTemplateRepoUrl(event.target.value)}
           />
           <span className="field-hint">
-            VMAT no crea repositorios automáticamente: los
+            WebClass no crea repositorios automáticamente: los
             estudiantes usan la plantilla y entregan el enlace de su
             repositorio.
           </span>

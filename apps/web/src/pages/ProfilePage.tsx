@@ -99,7 +99,7 @@ export function ProfilePage({
           <div>
             <strong>@{githubLogin}</strong>
             <span className="muted">
-              Iniciaste sesión con GitHub. VMAT solo usa tu
+              Iniciaste sesión con GitHub. WebClass solo usa tu
               identidad pública (usuario y avatar); no crea ni
               modifica repositorios sin tu permiso.
             </span>

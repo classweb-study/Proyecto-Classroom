@@ -137,7 +137,7 @@ export function PlatformPage({ onChanged }: { onChanged: () => void }) {
               onChange={event => setAdminLogin(event.target.value)}
             />
             <span className="field-hint">
-              Debe haber iniciado sesión en VMAT al menos una vez.
+              Debe haber iniciado sesión en WebClass al menos una vez.
             </span>
           </div>
         </div>

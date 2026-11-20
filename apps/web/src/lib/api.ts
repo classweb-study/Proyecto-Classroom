@@ -67,7 +67,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   INVALID_INSTITUTION: 'Revisa los datos de la institución.',
   SLUG_ALREADY_EXISTS: 'Ya existe una institución con ese identificador.',
   ADMIN_USER_NOT_FOUND:
-    'Esa cuenta de GitHub todavía no ha iniciado sesión en VMAT.',
+    'Esa cuenta de GitHub todavía no ha iniciado sesión en WebClass.',
   ORIGIN_FORBIDDEN: 'La solicitud fue bloqueada por seguridad.',
   SERVICE_UNAVAILABLE: 'El servicio no está disponible. Inténtalo más tarde.',
 };

@@ -327,7 +327,7 @@ function StudentSubmissions({
             {activity.kind === 'REPOSITORY' && (
               <p className="field-hint">
                 Asegúrate de que tu profesor pueda ver el repositorio
-                (público o con acceso concedido). VMAT todavía no
+                (público o con acceso concedido). WebClass todavía no
                 comprueba la visibilidad del repositorio en GitHub.
               </p>
             )}

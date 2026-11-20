@@ -211,7 +211,7 @@ function App() {
       <main className="center-screen">
         <div>
           <div className="loader" />
-          <p className="muted">Cargando VMAT…</p>
+          <p className="muted">Cargando WebClass…</p>
         </div>
       </main>
     );
@@ -221,9 +221,9 @@ function App() {
     return (
       <main className="auth-page">
         <section className="auth-card">
-          <div className="brand-mark">V</div>
+          <div className="brand-mark">W</div>
 
-          <p className="eyebrow">VMAT CLASSROOM</p>
+          <p className="eyebrow">WebClass</p>
 
           <h1>Tu aula, conectada con GitHub.</h1>
 
@@ -242,7 +242,7 @@ function App() {
 
           <p className="auth-note">
             GitHub autentica tu cuenta. Los permisos académicos
-            se gestionan de forma independiente en VMAT.
+            se gestionan de forma independiente en WebClass.
           </p>
         </section>
       </main>
@@ -253,7 +253,7 @@ function App() {
     return (
       <main className="center-screen">
         <div className="error-card">
-          <p className="eyebrow">VMAT</p>
+          <p className="eyebrow">WebClass</p>
           <h1>No pudimos cargar tu sesión.</h1>
 
           <p className="muted">

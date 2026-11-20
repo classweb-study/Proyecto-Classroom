@@ -264,7 +264,7 @@ function NewRequestForm({
               <span className="field-hint">
                 No hay instituciones que coincidan. Si tu
                 universidad no aparece, todavía no está
-                registrada en VMAT.
+                registrada en WebClass.
               </span>
             )}
 
@@ -511,10 +511,10 @@ export function AccessRequestsPage({
       ) : (
         <header className="access-requests-header">
           <div>
-            <p className="eyebrow">VMAT</p>
+            <p className="eyebrow">WebClass</p>
             <h1>Acceso a tu institución</h1>
             <p className="muted">
-              Conectado como @{githubLogin}. Para usar VMAT
+              Conectado como @{githubLogin}. Para usar WebClass
               necesitas que una institución apruebe tu acceso.
               Mientras tanto no podrás ver cursos ni entregar
               trabajos.
