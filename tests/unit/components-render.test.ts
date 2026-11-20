@@ -267,8 +267,8 @@ describe('AppShell', async () => {
   });
 
   it('Plataforma solo aparece para quien administra la plataforma', () => {
-    expect(render(AppShell, props)).not.toContain('Plataforma');
-    expect(render(AppShell, { ...props, isPlatformAdmin: true })).toContain('Plataforma');
+    expect(render(AppShell, props)).not.toContain('Administración general');
+    expect(render(AppShell, { ...props, isPlatformAdmin: true })).toContain('Administración general');
   });
 
   it('con varios roles muestra "Ver como", y usa el logo y color de la institución', () => {

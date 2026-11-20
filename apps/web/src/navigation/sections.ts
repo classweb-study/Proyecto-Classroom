@@ -65,7 +65,7 @@ export const SECTIONS: Section[] = [
   { id: 'profile', label: 'Mi perfil', group: 'account', path: '/perfil', keywords: ['cuenta', 'github', 'rol', 'identidad', 'usuario', 'notificaciones'] },
   { id: 'requests', label: 'Mis solicitudes', group: 'account', path: '/mis-solicitudes', keywords: ['acceso', 'unirme', 'pedir', 'mensajes'] },
   { id: 'appearance', label: 'Apariencia', group: 'account', path: '/apariencia', keywords: ['tema', 'color', 'oscuro', 'claro', 'gris', 'secundario', 'modo'] },
-  { id: 'platform', label: 'Plataforma', group: 'account', path: '/plataforma', keywords: ['instituciones', 'registrar', 'global'], platformAdminOnly: true },
+  { id: 'platform', label: 'Administración general', group: 'account', path: '/plataforma', keywords: ['instituciones', 'registrar', 'plataforma', 'global'], platformAdminOnly: true },
   { id: 'components', label: 'Componentes (dev)', group: 'account', path: '/componentes', keywords: ['catálogo', 'botones', 'ui'], devOnly: true },
 ];
 
@@ -159,13 +159,13 @@ export function pageTitle(page: AppPage, appName = 'WebClass'): string {
 }
 
 export const ROLE_NAME: Record<ViewRole, string> = {
-  ADMIN: 'Administrador',
+  ADMIN: 'Administrador de institución',
   TEACHER: 'Profesor',
   STUDENT: 'Estudiante',
 };
 
 export function primaryRoleLabel(roles: readonly string[]): string {
-  if (roles.includes('ADMIN')) return 'Administrador';
+  if (roles.includes('ADMIN')) return 'Administrador de institución';
   if (roles.includes('TEACHER')) return 'Profesor';
   if (roles.includes('STUDENT')) return 'Estudiante';
   return 'Sin rol';

@@ -80,12 +80,10 @@ export function PlatformPage({ onChanged }: { onChanged: () => void }) {
     <div className="admin-page">
       <section className="page-heading">
         <div>
-          <p className="page-kicker">PLATAFORMA</p>
-          <h1>Instituciones</h1>
+          <p className="page-kicker">ADMINISTRADOR GENERAL</p>
+          <h1>Administración general</h1>
           <p>
-            Registra universidades y nombra a su primer
-            administrador. Solo las cuentas autorizadas en la
-            configuración del servidor ven esta sección.
+            Crea universidades, colegios o escuelas y elige quién administrará cada institución.
           </p>
         </div>
       </section>
@@ -126,7 +124,7 @@ export function PlatformPage({ onChanged }: { onChanged: () => void }) {
           </div>
           <div className="form-field">
             <label htmlFor="platform-admin">
-              Usuario de GitHub del primer administrador
+              Usuario de GitHub del primer administrador de institución
             </label>
             <input
               id="platform-admin"
@@ -204,7 +202,7 @@ function AddAdmin({
   return (
     <div className="platform-admins">
       <span className="muted">
-        Administradores:{' '}
+        Administradores de institución:{' '}
         {institution.admins.length
           ? institution.admins.map(admin => `@${admin}`).join(', ')
           : 'ninguno'}
@@ -239,7 +237,7 @@ function AddAdmin({
           className="link-button"
           disabled={login.trim() === ''}
         >
-          Agregar administrador
+          Asignar administrador de institución
         </button>
       </form>
       {error && <span className="field-error">{error}</span>}

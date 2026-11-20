@@ -191,7 +191,7 @@ function App() {
   const [preferredRole, setPreferredRole] = useState<string | null>(() =>
     readStored(VIEW_ROLE_KEY),
   );
-  const [platformOnly, setPlatformOnly] = useState(false);
+  const [platformOnly, setPlatformOnly] = useState(true);
 
   const authRef = useRef(auth);
   authRef.current = auth;

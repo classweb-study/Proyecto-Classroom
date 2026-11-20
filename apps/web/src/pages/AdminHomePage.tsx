@@ -153,7 +153,7 @@ export function AdminHomePage({
 
         <span className="admin-badge">
           <span />
-          Administrador
+          Administrador de institución
         </span>
       </section>
 
@@ -162,8 +162,8 @@ export function AdminHomePage({
 
       {onManageInstitutions && (
         <section className="admin-panel">
-          <h2>Universidades</h2>
-          <p>Registra una institución y elige quién administrará sus solicitudes.</p>
+          <h2>Administración general</h2>
+          <p>Crea una universidad, colegio o escuela y asigna su administrador de institución.</p>
           <button type="button" className="primary-action" onClick={onManageInstitutions}>
             Crear o administrar instituciones
           </button>

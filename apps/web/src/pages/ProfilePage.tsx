@@ -16,7 +16,7 @@ type Membership = {
 };
 
 const ROLE_LABEL: Record<string, string> = {
-  ADMIN: 'Administrador',
+  ADMIN: 'Administrador de institución',
   TEACHER: 'Profesor',
   STUDENT: 'Estudiante',
 };

@@ -124,7 +124,7 @@ describe('textos', () => {
   });
 
   it('rol principal: administrador antes que profesor y estudiante', () => {
-    expect(primaryRoleLabel(['STUDENT', 'ADMIN'])).toBe('Administrador');
+    expect(primaryRoleLabel(['STUDENT', 'ADMIN'])).toBe('Administrador de institución');
     expect(primaryRoleLabel(['STUDENT', 'TEACHER'])).toBe('Profesor');
     expect(primaryRoleLabel(['STUDENT'])).toBe('Estudiante');
     expect(primaryRoleLabel([])).toBe('Sin rol');

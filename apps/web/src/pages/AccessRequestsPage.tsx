@@ -537,7 +537,7 @@ export function AccessRequestsPage({
                 className="secondary-action"
                 onClick={onOpenPlatform}
               >
-                Administrar plataforma
+                Administración general
               </button>
             )}
             <button
