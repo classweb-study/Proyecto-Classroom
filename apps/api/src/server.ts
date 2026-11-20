@@ -5,9 +5,11 @@ import type {
 } from 'node:http';
 
 import {
+  createAcademicRepository,
   createAdminRepository,
   createAuthRepository,
   createInstitutionAccessRepository,
+  createPlatformRepository,
 } from '@classroom/database';
 import { createGitHubAuth } from '@classroom/github';
 import { databaseUrl } from '@classroom/shared';
@@ -82,6 +84,8 @@ if (missingEnvironment.length > 0) {
   const auth = createAuthRepository(pool);
   const access = createInstitutionAccessRepository(pool);
   const admin = createAdminRepository(pool);
+  const academic = createAcademicRepository(pool);
+  const platform = createPlatformRepository(pool);
 
   const githubAuth = createGitHubAuth({
     clientId: requiredEnvironment('AUTH_GITHUB_CLIENT_ID'),
@@ -93,12 +97,17 @@ if (missingEnvironment.length > 0) {
     auth,
     access,
     admin,
+    academic,
+    platform,
+    platformAdminGithubIds: (process.env.PLATFORM_ADMIN_GITHUB_IDS ?? '')
+      .split(',')
+      .map(id => id.trim())
+      .filter(Boolean),
     githubAuth,
     frontendOrigin: requiredEnvironment('FRONTEND_ORIGIN'),
     secureCookies:
       process.env.VERCEL_ENV === 'production' ||
       process.env.NODE_ENV === 'production',
-    defaultInstitutionSlug: 'unisabana',
     checkReadiness: async () => {
       await pool.query('SELECT 1');
       return true;

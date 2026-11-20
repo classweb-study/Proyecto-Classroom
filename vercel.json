@@ -33,6 +33,18 @@
       }
     },
     {
+      "source": "/me/(.*)",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
+      "source": "/institutions",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
       "source": "/auth",
       "destination": {
         "service": "api"
@@ -52,6 +64,36 @@
     },
     {
       "source": "/admin/(.*)",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
+      "source": "/courses",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
+      "source": "/courses/(.*)",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
+      "source": "/activities/(.*)",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
+      "source": "/submissions/(.*)",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
+      "source": "/platform/(.*)",
       "destination": {
         "service": "api"
       }

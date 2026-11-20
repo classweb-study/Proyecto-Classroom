@@ -49,21 +49,19 @@ function createDependencies() {
   };
 
   const access = {
-    ensurePendingRequest: vi.fn(async () => 'EXISTS' as const),
-    findAccessRequest: vi.fn(
-      async (): Promise<
-        | {
-            id: string;
-            institution: {
-              id: string;
-              name: string;
-              slug: string;
-            };
-            status: 'PENDING' | 'APPROVED' | 'DENIED';
-            assignedRole: 'TEACHER' | 'STUDENT' | null;
-          }
-        | null
-      > => null,
+    searchInstitutions: vi.fn(async () => []),
+    listMyAccessRequests: vi.fn(async () => []),
+    submitAccessRequest: vi.fn(
+      async () => ({ status: 'PENDING_EXISTS' as const }),
+    ),
+    cancelAccessRequest: vi.fn(
+      async () => ({ status: 'NOT_FOUND' as const }),
+    ),
+    listMyRequestMessages: vi.fn(
+      async () => ({ status: 'NOT_FOUND' as const }),
+    ),
+    postMyRequestMessage: vi.fn(
+      async () => ({ status: 'NOT_FOUND' as const }),
     ),
   };
 
@@ -79,6 +77,17 @@ function createDependencies() {
               avatarUrl: string | null;
               institutionId: string;
               institutionName: string;
+              requestedRole: 'TEACHER' | 'STUDENT' | null;
+              fullName: string | null;
+              contactEmail: string | null;
+              institutionalEmail: string | null;
+              institutionalCode: string | null;
+              requestReason: string | null;
+              domainMatch: boolean;
+              status: 'PENDING' | 'APPROVED' | 'DENIED' | 'CANCELLED';
+              assignedRole: 'TEACHER' | 'STUDENT' | null;
+              decisionReason: string | null;
+              decidedAt: Date | null;
               createdAt: Date;
             }>;
           }
@@ -157,6 +166,33 @@ function createDependencies() {
         status: 'NOT_FOUND',
       }),
     ),
+    getInstitutionOverview: vi.fn(
+      async () => ({ status: 'FORBIDDEN' as const }),
+    ),
+    updateInstitution: vi.fn(
+      async () => ({ status: 'FORBIDDEN' as const }),
+    ),
+    addInstitutionDomain: vi.fn(
+      async () => ({ status: 'FORBIDDEN' as const }),
+    ),
+    removeInstitutionDomain: vi.fn(
+      async () => ({ status: 'FORBIDDEN' as const }),
+    ),
+    revokeMembership: vi.fn(
+      async () => ({ status: 'FORBIDDEN' as const }),
+    ),
+    changeMembershipRole: vi.fn(
+      async () => ({ status: 'FORBIDDEN' as const }),
+    ),
+    listAuditLog: vi.fn(
+      async () => ({ status: 'FORBIDDEN' as const }),
+    ),
+    listRequestMessages: vi.fn(
+      async () => ({ status: 'FORBIDDEN' as const }),
+    ),
+    postRequestMessage: vi.fn(
+      async () => ({ status: 'FORBIDDEN' as const }),
+    ),
   };
 
   const githubAuth = {
@@ -186,7 +222,6 @@ function createDependencies() {
     githubAuth,
     frontendOrigin: 'https://vmat.example',
     secureCookies: true,
-    defaultInstitutionSlug: 'unisabana',
   };
 }
 
@@ -557,64 +592,13 @@ describe('Auth v1 HTTP boundary', () => {
             avatarUrl: 'https://example.test/avatar.png',
           },
           academicIdentity: null,
+          isPlatformAdmin: false,
           institutions: [],
-          accessRequest: null,
         },
       });
 
       expect(dependencies.auth.findSession).toHaveBeenCalledWith(
         session,
-      );
-    } finally {
-      await app.close();
-    }
-  });
-
-  it('returns a pending institutional access request for an authenticated user', async () => {
-    const dependencies = createDependencies();
-
-    dependencies.access.findAccessRequest.mockResolvedValueOnce({
-      id: '33333333-3333-4333-8333-333333333333',
-      institution: {
-        id: '22222222-2222-4222-8222-222222222222',
-        name: 'Universidad de La Sabana',
-        slug: 'unisabana',
-      },
-      status: 'PENDING',
-      assignedRole: null,
-    });
-
-    const app = createApp(dependencies);
-
-    try {
-      const session = token('s');
-
-      const response = await app.inject({
-        method: 'GET',
-        url: '/me',
-        headers: {
-          cookie: `${SESSION_COOKIE}=${session}`,
-        },
-      });
-
-      expect(response.statusCode).toBe(200);
-
-      expect(response.json().user.accessRequest).toEqual({
-        id: '33333333-3333-4333-8333-333333333333',
-        institution: {
-          id: '22222222-2222-4222-8222-222222222222',
-          name: 'Universidad de La Sabana',
-          slug: 'unisabana',
-        },
-        status: 'PENDING',
-        assignedRole: null,
-      });
-
-      expect(
-        dependencies.access.findAccessRequest,
-      ).toHaveBeenCalledWith(
-        '11111111-1111-4111-8111-111111111111',
-        'unisabana',
       );
     } finally {
       await app.close();
@@ -682,6 +666,17 @@ describe('Auth v1 HTTP boundary', () => {
           avatarUrl: null,
           institutionId: '22222222-2222-4222-8222-222222222222',
           institutionName: 'Universidad de La Sabana',
+          requestedRole: null,
+          fullName: null,
+          contactEmail: null,
+          institutionalEmail: null,
+          institutionalCode: null,
+          requestReason: null,
+          domainMatch: false,
+          status: 'PENDING',
+          assignedRole: null,
+          decisionReason: null,
+          decidedAt: null,
           createdAt: new Date('2026-10-01T20:00:00.000Z'),
         },
       ],
@@ -710,6 +705,7 @@ describe('Auth v1 HTTP boundary', () => {
       ).toHaveBeenCalledWith(
         '11111111-1111-4111-8111-111111111111',
         '22222222-2222-4222-8222-222222222222',
+        'PENDING',
       );
     } finally {
       await app.close();
@@ -871,6 +867,9 @@ describe('Auth v1 HTTP boundary', () => {
           origin: 'https://vmat.example',
           cookie: `${SESSION_COOKIE}=${token('s')}`,
         },
+        payload: {
+          reason: 'Solicita acceso a tu institución correspondiente.',
+        },
       });
 
       expect(response.statusCode).toBe(200);
@@ -891,6 +890,7 @@ describe('Auth v1 HTTP boundary', () => {
           '22222222-2222-4222-8222-222222222222',
         requestId:
           '33333333-3333-4333-8333-333333333333',
+        reason: 'Solicita acceso a tu institución correspondiente.',
       });
     } finally {
       await app.close();

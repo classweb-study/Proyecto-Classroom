@@ -29,6 +29,27 @@
       "when": 1790889053803,
       "tag": "0003_superb_maddog",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794868602538,
+      "tag": "0004_many_green_goblin",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1795054754951,
+      "tag": "0005_windy_gertrude_yorkes",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795135491751,
+      "tag": "0006_colossal_machine_man",
+      "breakpoints": true
     }
   ]
 }

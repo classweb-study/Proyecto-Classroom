@@ -1,15 +1,47 @@
-import { StrictMode, useEffect, useState } from 'react';
+import {
+  StrictMode,
+  useCallback,
+  useEffect,
+  useState,
+} from 'react';
 import { createRoot } from 'react-dom/client';
 
 import {
   AppShell,
-  type AdminPage,
+  type AppPage,
+  type ViewRole,
 } from './components/AppShell';
 import { AdminHomePage } from './pages/AdminHomePage';
 import { AdminUsersPage } from './pages/AdminUsersPage';
 import { AdminMembersPage } from './pages/AdminMembersPage';
+import { AccessRequestsPage } from './pages/AccessRequestsPage';
+import { AdminInstitutionPage } from './pages/AdminInstitutionPage';
+import { CoursesSection } from './pages/CoursesPage';
+import { StudentHomePage, TeacherHomePage } from './pages/HomeDashboards';
+import { PlatformPage } from './pages/PlatformPage';
+import { ProfilePage } from './pages/ProfilePage';
+import type { Navigate } from './lib/api';
 
 import './style.css';
+
+const ACTIVE_INSTITUTION_KEY = 'vmat-active-institution';
+const VIEW_ROLE_KEY = 'vmat-view-role';
+
+function readStored(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function store(key: string, value: string) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Remembering the choice is a convenience; switching still works without it.
+  }
+}
 
 type InstitutionRole = 'ADMIN' | 'TEACHER' | 'STUDENT';
 type AcademicIdentityStatus =
@@ -27,26 +59,19 @@ type CurrentUser = {
   academicIdentity: null | {
     displayName?: string;
   };
+  isPlatformAdmin?: boolean;
   institutions: Array<{
     id: string;
     name: string;
     slug: string;
     roles: InstitutionRole[];
+    logoUrl?: string | null;
+    accentColor?: string | null;
     academicIdentity: null | {
       institutionalIdentifier: string;
       status: AcademicIdentityStatus;
     };
   }>;
-  accessRequest: null | {
-    id: string;
-    institution: {
-      id: string;
-      name: string;
-      slug: string;
-    };
-    status: 'PENDING' | 'APPROVED' | 'DENIED';
-    assignedRole: 'TEACHER' | 'STUDENT' | null;
-  };
 };
 
 type AuthState =
@@ -54,6 +79,22 @@ type AuthState =
   | { status: 'anonymous' }
   | { status: 'authenticated'; user: CurrentUser }
   | { status: 'error' };
+
+type View = {
+  page: AppPage;
+  courseId?: string;
+  activityId?: string;
+};
+
+const ROLE_PRIORITY: ViewRole[] = ['ADMIN', 'TEACHER', 'STUDENT'];
+
+const PAGES_BY_ROLE: Record<ViewRole, AppPage[]> = {
+  ADMIN: ['home', 'users', 'teachers', 'students', 'institution'],
+  TEACHER: ['home', 'courses'],
+  STUDENT: ['home', 'courses'],
+};
+
+const COMMON_PAGES: AppPage[] = ['profile', 'requests', 'platform'];
 
 function GitHubIcon() {
   return (
@@ -66,55 +107,46 @@ function GitHubIcon() {
   );
 }
 
-function EmptyAdminPage({
-  title,
-  description,
-}: {
-  title: string;
-  description: string;
-}) {
-  return (
-    <div className="admin-page">
-      <section className="page-heading">
-        <div>
-          <p className="page-kicker">ADMINISTRACIÓN</p>
-          <h1>{title}</h1>
-          <p>{description}</p>
-        </div>
-      </section>
-
-      <section className="admin-panel">
-        <div className="empty-admin-state large">
-          <div className="empty-admin-letter">
-            {title.charAt(0)}
-          </div>
-
-          <strong>Aún no hay información para mostrar</strong>
-
-          <p>
-            Esta sección se conectará con datos reales de WebClass.
-          </p>
-        </div>
-      </section>
-    </div>
-  );
-}
-
 function App() {
   const [auth, setAuth] = useState<AuthState>({
     status: 'loading',
   });
 
   const [loggingOut, setLoggingOut] = useState(false);
-  const [activePage, setActivePage] =
-    useState<AdminPage>('home');
+  const [view, setView] = useState<View>({ page: 'home' });
+  const [activeInstitutionId, setActiveInstitutionId] =
+    useState<string | null>(() => readStored(ACTIVE_INSTITUTION_KEY));
+  const [preferredRole, setPreferredRole] = useState<string | null>(() =>
+    readStored(VIEW_ROLE_KEY),
+  );
+  const [platformOnly, setPlatformOnly] = useState(false);
 
-  useEffect(() => {
-    const controller = new AbortController();
+  function switchInstitution(institutionId: string) {
+    // Switching never carries course or request ids across institutions.
+    setActiveInstitutionId(institutionId);
+    store(ACTIVE_INSTITUTION_KEY, institutionId);
+    setView({ page: 'home' });
+  }
 
-    fetch('/me', {
+  function switchRole(role: ViewRole) {
+    setPreferredRole(role);
+    store(VIEW_ROLE_KEY, role);
+    setView({ page: 'home' });
+  }
+
+  const navigate: Navigate = target => {
+    setView({
+      page: target.page as AppPage,
+      courseId: target.courseId,
+      activityId: target.activityId,
+    });
+    window.scrollTo({ top: 0 });
+  };
+
+  const loadSession = useCallback((signal?: AbortSignal) => {
+    return fetch('/me', {
       credentials: 'same-origin',
-      signal: controller.signal,
+      signal,
     })
       .then(async response => {
         if (response.status === 401) {
@@ -145,9 +177,13 @@ function App() {
 
         setAuth({ status: 'error' });
       });
-
-    return () => controller.abort();
   }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadSession(controller.signal);
+    return () => controller.abort();
+  }, [loadSession]);
 
   async function logout() {
     setLoggingOut(true);
@@ -237,127 +273,95 @@ function App() {
   }
 
   const { user } = auth;
-  const institution = user.institutions[0];
-  const accessRequest = user.accessRequest;
+  const isPlatformAdmin = user.isPlatformAdmin === true;
+  const institution =
+    user.institutions.find(
+      item => item.id === activeInstitutionId,
+    ) ?? user.institutions[0];
 
-  if (!institution && accessRequest?.status === 'PENDING') {
-    return (
-      <main className="center-screen">
-        <div className="error-card">
-          <p className="eyebrow">WebClass</p>
-          <h1>Solicitud pendiente</h1>
-
-          <p className="muted">
-            Tu cuenta de GitHub está autenticada. Tu solicitud
-            para ingresar a {accessRequest.institution.name}{' '}
-            está esperando la aprobación de un administrador.
-          </p>
-
-          <span className="status-pill pending">
-            Pendiente de aprobación
-          </span>
-
-          <div>
-            <button
-              type="button"
-              className="logout-button"
-              onClick={logout}
-              disabled={loggingOut}
-            >
-              {loggingOut
-                ? 'Cerrando sesión…'
-                : 'Cerrar sesión'}
-            </button>
-          </div>
-        </div>
-      </main>
-    );
-  }
-
-  if (!institution && accessRequest?.status === 'DENIED') {
-    return (
-      <main className="center-screen">
-        <div className="error-card">
-          <p className="eyebrow">WebClass</p>
-          <h1>Acceso no autorizado</h1>
-
-          <p className="muted">
-            Tu solicitud para ingresar a{' '}
-            {accessRequest.institution.name} fue denegada.
-          </p>
-
-          <button
-            type="button"
-            className="logout-button"
-            onClick={logout}
-            disabled={loggingOut}
-          >
-            {loggingOut
-              ? 'Cerrando sesión…'
-              : 'Cerrar sesión'}
-          </button>
-        </div>
-      </main>
-    );
-  }
-
+  // Without an approved institution the only things available are the
+  // request flow and, for platform admins, institution registration.
   if (!institution) {
-    return (
-      <main className="center-screen">
-        <div className="error-card">
-          <p className="eyebrow">WebClass</p>
-          <h1>Cuenta sin institución</h1>
-
-          <p className="muted">
-            Tu cuenta está autenticada, pero no tiene una
-            institución ni una solicitud de acceso asociada.
-          </p>
-
+    if (platformOnly && isPlatformAdmin) {
+      return (
+        <main className="access-requests-page">
           <button
             type="button"
-            className="logout-button"
-            onClick={logout}
-            disabled={loggingOut}
+            className="link-button back-link"
+            onClick={() => setPlatformOnly(false)}
           >
-            {loggingOut
-              ? 'Cerrando sesión…'
-              : 'Cerrar sesión'}
+            ← Mis solicitudes
           </button>
-        </div>
-      </main>
+          <PlatformPage onChanged={() => void loadSession()} />
+        </main>
+      );
+    }
+
+    return (
+      <AccessRequestsPage
+        githubLogin={user.github.login}
+        loggingOut={loggingOut}
+        onLogout={logout}
+        onOpenPlatform={
+          isPlatformAdmin ? () => setPlatformOnly(true) : undefined
+        }
+      />
     );
   }
 
-  if (!institution.roles.includes('ADMIN')) {
-    return (
-      <main className="center-screen">
-        <div className="error-card">
-          <p className="eyebrow">WebClass</p>
-          <h1>Perfil académico registrado</h1>
+  const viewRole: ViewRole =
+    ROLE_PRIORITY.find(
+      role =>
+        role === preferredRole && institution.roles.includes(role),
+    ) ??
+    ROLE_PRIORITY.find(role => institution.roles.includes(role)) ??
+    'STUDENT';
 
-          <p className="muted">
-            Esta cuenta pertenece a {institution.name}, pero la
-            interfaz para su rol todavía no está habilitada en
-            esta etapa del desarrollo.
-          </p>
+  // A page from another role (e.g. after switching) falls back to home.
+  const page: AppPage =
+    PAGES_BY_ROLE[viewRole].includes(view.page) ||
+    (COMMON_PAGES.includes(view.page) &&
+      (view.page !== 'platform' || isPlatformAdmin))
+      ? view.page
+      : 'home';
 
-          <button
-            type="button"
-            className="logout-button"
-            onClick={logout}
-            disabled={loggingOut}
-          >
-            {loggingOut
-              ? 'Cerrando sesión…'
-              : 'Cerrar sesión'}
-          </button>
-        </div>
-      </main>
-    );
-  }
+  function renderPage() {
+    switch (page) {
+      case 'profile':
+        return (
+          <ProfilePage
+            githubLogin={user.github.login}
+            avatarUrl={user.github.avatarUrl}
+            institutions={user.institutions}
+            onOpenRequests={() => navigate({ page: 'requests' })}
+          />
+        );
 
-  function renderAdminPage() {
-    switch (activePage) {
+      case 'requests':
+        return (
+          <AccessRequestsPage
+            embedded
+            githubLogin={user.github.login}
+            loggingOut={loggingOut}
+            onLogout={logout}
+          />
+        );
+
+      case 'platform':
+        return <PlatformPage onChanged={() => void loadSession()} />;
+
+      case 'courses':
+        return (
+          <CoursesSection
+            key={`${institution.id}-${viewRole}`}
+            institutionId={institution.id}
+            role={viewRole === 'TEACHER' ? 'TEACHER' : 'STUDENT'}
+            courseId={view.courseId}
+            activityId={view.activityId}
+            navigate={navigate}
+          />
+        );
+
       case 'users':
         return (
           <AdminUsersPage
@@ -372,6 +376,7 @@ function App() {
             institutionId={institution.id}
             institutionName={institution.name}
             role="TEACHER"
+            currentUserId={user.id}
           />
         );
 
@@ -381,23 +386,41 @@ function App() {
             institutionId={institution.id}
             institutionName={institution.name}
             role="STUDENT"
+            currentUserId={user.id}
           />
         );
 
       case 'institution':
         return (
-          <EmptyAdminPage
-            title="Institución"
-            description="Consulta y administra la configuración institucional."
+          <AdminInstitutionPage
+            institutionId={institution.id}
+            onInstitutionRenamed={() => void loadSession()}
           />
         );
 
       case 'home':
       default:
-        return (
-          <AdminHomePage
+        if (viewRole === 'ADMIN') {
+          return (
+            <AdminHomePage
+              institutionId={institution.id}
+              institutionName={institution.name}
+              onOpenRequests={() => navigate({ page: 'users' })}
+            />
+          );
+        }
+
+        return viewRole === 'TEACHER' ? (
+          <TeacherHomePage
+            institutionId={institution.id}
             institutionName={institution.name}
-            githubLogin={user.github.login}
+            navigate={navigate}
+          />
+        ) : (
+          <StudentHomePage
+            institutionId={institution.id}
+            institutionName={institution.name}
+            navigate={navigate}
           />
         );
     }
@@ -405,16 +428,24 @@ function App() {
 
   return (
     <AppShell
-      activePage={activePage}
-      onNavigate={setActivePage}
+      activePage={page}
+      onNavigate={next => navigate({ page: next })}
       githubLogin={user.github.login}
       avatarUrl={user.github.avatarUrl}
       institutionName={institution.name}
+      institutionLogoUrl={institution.logoUrl}
+      institutionAccent={institution.accentColor}
+      institutions={user.institutions}
+      activeInstitutionId={institution.id}
+      onSwitchInstitution={switchInstitution}
       roles={institution.roles}
+      viewRole={viewRole}
+      onSwitchRole={switchRole}
+      isPlatformAdmin={isPlatformAdmin}
       loggingOut={loggingOut}
       onLogout={logout}
     >
-      {renderAdminPage()}
+      {renderPage()}
     </AppShell>
   );
 }

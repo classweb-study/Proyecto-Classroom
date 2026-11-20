@@ -33,6 +33,9 @@ export interface UserInstitutionContext {
     institutionalIdentifier: string;
     status: AcademicIdentityStatus;
   } | null;
+  // Visual identity chosen by the institution's admin.
+  logoUrl?: string | null;
+  accentColor?: string | null;
 }
 
 async function rollback(client: PoolClient) {
@@ -270,16 +273,20 @@ values: [stateHash, bindingHash],
           institution_id: string;
           institution_name: string;
           institution_slug: string;
+          logo_url: string | null;
+          accent_color: string | null;
           role: InstitutionRole;
           institutional_identifier: string | null;
           academic_identity_status: AcademicIdentityStatus | null;
         }>({
-          name: 'auth-user-access-context',
+          name: 'auth-user-access-context-v2',
           text: `
             SELECT
               i.id AS institution_id,
               i.name AS institution_name,
               i.slug AS institution_slug,
+              i.logo_url,
+              i.accent_color,
               m.role,
               ai.institutional_identifier,
               ai.status AS academic_identity_status
@@ -309,6 +316,8 @@ values: [stateHash, bindingHash],
               id: row.institution_id,
               name: row.institution_name,
               slug: row.institution_slug,
+              logoUrl: row.logo_url,
+              accentColor: row.accent_color,
               roles: [],
               academicIdentity:
                 row.institutional_identifier &&
