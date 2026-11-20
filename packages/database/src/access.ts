@@ -27,6 +27,7 @@ export type MyAccessRequest = {
   institutionalEmail: string | null;
   institutionalCode: string | null;
   requestReason: string | null;
+  hasActiveMembership: boolean;
   messageCount: number;
   createdAt: Date;
   decidedAt: Date | null;
@@ -121,11 +122,12 @@ export function createInstitutionAccessRepository(pool: Pool) {
           institutional_email: string | null;
           institutional_code: string | null;
           request_reason: string | null;
+          has_active_membership: boolean;
           message_count: number;
           created_at: Date;
           decided_at: Date | null;
         }>({
-          name: 'access-requests-list-for-user-v2',
+          name: 'access-requests-list-for-user-v3',
           text: `
             SELECT
               r.id AS request_id,
@@ -141,6 +143,11 @@ export function createInstitutionAccessRepository(pool: Pool) {
               r.institutional_email,
               r.institutional_code,
               r.request_reason,
+              EXISTS (
+                SELECT 1 FROM institution_memberships m
+                 WHERE m.user_id = r.user_id AND m.institution_id = r.institution_id
+                   AND m.status = 'ACTIVE'
+              ) AS has_active_membership,
               (SELECT count(*)::int FROM access_request_messages m
                 WHERE m.request_id = r.id) AS message_count,
               r.created_at,
@@ -170,6 +177,7 @@ export function createInstitutionAccessRepository(pool: Pool) {
           institutionalEmail: row.institutional_email,
           institutionalCode: row.institutional_code,
           requestReason: row.request_reason,
+          hasActiveMembership: row.has_active_membership,
           messageCount: row.message_count,
           createdAt: row.created_at,
           decidedAt: row.decided_at,

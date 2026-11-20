@@ -350,7 +350,7 @@ export function AdminMembersPage({
                           })
                         }
                       >
-                        Revocar acceso
+                        Remover
                       </button>
                     </div>
                   )}
@@ -360,7 +360,7 @@ export function AdminMembersPage({
                   <div className="member-confirm" role="alertdialog">
                     <span>
                       {confirming.kind === 'revoke'
-                        ? `¿Revocar el acceso de @${member.githubLogin} a ${institutionName}? Podrá volver a solicitarlo.`
+                        ? `¿Remover a @${member.githubLogin} como ${singular} de ${institutionName}? Su cuenta se conserva y podrá volver a solicitar acceso.`
                         : `¿Cambiar a @${member.githubLogin} de ${singular} a ${otherRole === 'TEACHER' ? 'profesor' : 'estudiante'}?`}
                     </span>
                     <div className="form-actions">
