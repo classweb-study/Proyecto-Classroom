@@ -69,6 +69,36 @@
       }
     },
     {
+      "source": "/courses",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
+      "source": "/courses/(.*)",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
+      "source": "/activities/(.*)",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
+      "source": "/submissions/(.*)",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
+      "source": "/platform/(.*)",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
       "source": "/(.*)",
       "destination": {
         "service": "web"

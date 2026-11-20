@@ -4,6 +4,12 @@ import {
   createAdminRepository,
 } from '../../../packages/database/src/admin.js';
 import {
+  createAcademicRepository,
+} from '../../../packages/database/src/academic.js';
+import {
+  createPlatformRepository,
+} from '../../../packages/database/src/platform.js';
+import {
   createAuthRepository,
 } from '../../../packages/database/src/auth.js';
 import {
@@ -86,6 +92,8 @@ if (missingEnvironment.length > 0) {
   const auth = createAuthRepository(pool);
   const access = createInstitutionAccessRepository(pool);
   const admin = createAdminRepository(pool);
+  const academic = createAcademicRepository(pool);
+  const platform = createPlatformRepository(pool);
 
   const githubAuth = createGitHubAuth({
     clientId: requiredEnvironment('AUTH_GITHUB_CLIENT_ID'),
@@ -97,6 +105,12 @@ if (missingEnvironment.length > 0) {
     auth,
     access,
     admin,
+    academic,
+    platform,
+    platformAdminGithubIds: (process.env.PLATFORM_ADMIN_GITHUB_IDS ?? '')
+      .split(',')
+      .map(id => id.trim())
+      .filter(Boolean),
     githubAuth,
     frontendOrigin: requiredEnvironment('FRONTEND_ORIGIN'),
     secureCookies:

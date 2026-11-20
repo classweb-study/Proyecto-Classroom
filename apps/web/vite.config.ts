@@ -18,6 +18,10 @@ export default defineConfig({
       '/me': 'http://127.0.0.1:3001',
       '/admin': 'http://127.0.0.1:3001',
       '/institutions': 'http://127.0.0.1:3001',
+      '/courses': 'http://127.0.0.1:3001',
+      '/activities': 'http://127.0.0.1:3001',
+      '/submissions': 'http://127.0.0.1:3001',
+      '/platform': 'http://127.0.0.1:3001',
     },
   },
 });

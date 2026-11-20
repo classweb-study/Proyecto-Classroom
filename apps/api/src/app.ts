@@ -3,11 +3,15 @@ import Fastify, {
   type FastifyRequest,
 } from 'fastify';
 import type {
+  createAcademicRepository,
   createAdminRepository,
   createAuthRepository,
   createInstitutionAccessRepository,
+  createPlatformRepository,
 } from '@classroom/database';
 import type { createGitHubAuth } from '@classroom/github';
+
+import { registerAcademicRoutes } from './academic-routes.js';
 
 import {
   SESSION_COOKIE,
@@ -37,9 +41,37 @@ export interface AppDependencies {
   auth: AuthRepository;
   access: InstitutionAccessRepository;
   admin: AdminRepository;
+  /** Courses, activities and submissions; routes exist only when supplied. */
+  academic?: ReturnType<typeof createAcademicRepository>;
+  /** Institution creation; routes exist only when supplied. */
+  platform?: ReturnType<typeof createPlatformRepository>;
+  /**
+   * GitHub user ids (numeric, as strings) allowed to create institutions.
+   * Configured by deployment, never through the product, so nobody can
+   * grant themselves platform powers. Empty means nobody.
+   */
+  platformAdminGithubIds?: string[];
   githubAuth: GitHubAuth;
   frontendOrigin: string;
   secureCookies: boolean;
+}
+
+const SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?$/;
+const GITHUB_LOGIN_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
+const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
+
+function optionalHttpsUrl(value: unknown): string | null | false {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value !== 'string' || value.length > 500) return false;
+
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === 'https:' && !url.username && !url.password
+      ? url.toString()
+      : false;
+  } catch {
+    return false;
+  }
 }
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -154,9 +186,21 @@ export function createApp(dependencies?: AppDependencies) {
     auth,
     access,
     admin,
+    academic,
+    platform,
     githubAuth,
     secureCookies,
   } = dependencies;
+
+  const platformAdmins = new Set(
+    (dependencies.platformAdminGithubIds ?? []).filter(id =>
+      /^\d+$/.test(id),
+    ),
+  );
+
+  function isPlatformAdmin(user: { githubUserId: bigint }) {
+    return platformAdmins.has(user.githubUserId.toString());
+  }
 
   const frontendOrigin = normalizeOrigin(dependencies.frontendOrigin);
 
@@ -212,7 +256,9 @@ export function createApp(dependencies?: AppDependencies) {
       error instanceof Error &&
       (
         error.message === 'ACCESS_STORAGE_UNAVAILABLE' ||
-        error.message === 'ADMIN_STORAGE_UNAVAILABLE'
+        error.message === 'ADMIN_STORAGE_UNAVAILABLE' ||
+        error.message === 'ACADEMIC_STORAGE_UNAVAILABLE' ||
+        error.message === 'PLATFORM_STORAGE_UNAVAILABLE'
       )
     ) {
       return reply.code(503).send({
@@ -400,6 +446,7 @@ export function createApp(dependencies?: AppDependencies) {
           avatarUrl: user.avatarUrl,
         },
         academicIdentity: null,
+        isPlatformAdmin: isPlatformAdmin(user),
         institutions,
       },
     };
@@ -587,10 +634,25 @@ export function createApp(dependencies?: AppDependencies) {
     Params: {
       institutionId: string;
     };
+    Querystring: {
+      status?: string;
+    };
   }>(
     '/admin/institutions/:institutionId/access-requests',
     async (request, reply) => {
       const { institutionId } = request.params;
+      const status = request.query.status ?? 'PENDING';
+
+      if (
+        status !== 'PENDING' &&
+        status !== 'APPROVED' &&
+        status !== 'DENIED' &&
+        status !== 'CANCELLED'
+      ) {
+        return reply.code(400).send({
+          error: 'INVALID_STATUS',
+        });
+      }
 
       if (!validUuid(institutionId)) {
         return reply.code(400).send({
@@ -620,6 +682,7 @@ export function createApp(dependencies?: AppDependencies) {
       const result = await admin.listPendingAccessRequests(
         user.userId,
         institutionId,
+        status,
       );
 
       if (result.status === 'FORBIDDEN') {
@@ -902,7 +965,14 @@ export function createApp(dependencies?: AppDependencies) {
 
   app.patch<{
     Params: { institutionId: string };
-    Body: { name?: unknown; description?: unknown } | undefined;
+    Body:
+      | {
+          name?: unknown;
+          description?: unknown;
+          logoUrl?: unknown;
+          accentColor?: unknown;
+        }
+      | undefined;
   }>(
     '/admin/institutions/:institutionId',
     async (request, reply) => {
@@ -921,7 +991,22 @@ export function createApp(dependencies?: AppDependencies) {
           ? null
           : boundedText(rawDescription, 1, 2000);
 
-      if (!name || (rawDescription && !description)) {
+      const logoUrl = optionalHttpsUrl(request.body?.logoUrl);
+      const rawAccent = request.body?.accentColor;
+      const accentColor =
+        rawAccent === undefined || rawAccent === null || rawAccent === ''
+          ? null
+          : typeof rawAccent === 'string' &&
+              HEX_COLOR_PATTERN.test(rawAccent)
+            ? rawAccent.toLowerCase()
+            : false;
+
+      if (
+        !name ||
+        (rawDescription && !description) ||
+        logoUrl === false ||
+        accentColor === false
+      ) {
         return reply.code(400).send({
           error: 'INVALID_INSTITUTION',
         });
@@ -932,6 +1017,8 @@ export function createApp(dependencies?: AppDependencies) {
         institutionId: request.params.institutionId,
         name,
         description,
+        logoUrl,
+        accentColor,
       });
 
       return sendAdminResult(reply, result, () => ({
@@ -1079,6 +1166,229 @@ export function createApp(dependencies?: AppDependencies) {
       }));
     },
   );
+
+  app.get<{ Params: { requestId: string } }>(
+    '/me/access-requests/:requestId/messages',
+    async (request, reply) => {
+      const user = await adminRouteActor(request, reply, ['requestId']);
+
+      if (!user) return reply;
+
+      const result = await access.listMyRequestMessages(
+        user.userId,
+        request.params.requestId,
+      );
+
+      return sendAdminResult(reply, result, r => ({
+        messages: r.messages,
+      }));
+    },
+  );
+
+  app.post<{
+    Params: { requestId: string };
+    Body: { body?: unknown } | undefined;
+  }>(
+    '/me/access-requests/:requestId/messages',
+    async (request, reply) => {
+      const user = await adminRouteActor(request, reply, ['requestId']);
+
+      if (!user) return reply;
+
+      const body = boundedText(request.body?.body, 1, 2000);
+
+      if (!body) {
+        return reply.code(400).send({ error: 'INVALID_MESSAGE' });
+      }
+
+      const result = await access.postMyRequestMessage(
+        user.userId,
+        request.params.requestId,
+        body,
+      );
+
+      return sendAdminResult(
+        reply,
+        result,
+        () => ({ status: 'SENT' }),
+        201,
+      );
+    },
+  );
+
+  app.get<{ Params: { institutionId: string; requestId: string } }>(
+    '/admin/institutions/:institutionId/access-requests/:requestId/messages',
+    async (request, reply) => {
+      const user = await adminRouteActor(request, reply, [
+        'institutionId',
+        'requestId',
+      ]);
+
+      if (!user) return reply;
+
+      const result = await admin.listRequestMessages({
+        actorUserId: user.userId,
+        institutionId: request.params.institutionId,
+        requestId: request.params.requestId,
+      });
+
+      return sendAdminResult(reply, result, r => ({
+        messages: r.messages,
+      }));
+    },
+  );
+
+  app.post<{
+    Params: { institutionId: string; requestId: string };
+    Body: { body?: unknown } | undefined;
+  }>(
+    '/admin/institutions/:institutionId/access-requests/:requestId/messages',
+    async (request, reply) => {
+      const user = await adminRouteActor(request, reply, [
+        'institutionId',
+        'requestId',
+      ]);
+
+      if (!user) return reply;
+
+      const body = boundedText(request.body?.body, 1, 2000);
+
+      if (!body) {
+        return reply.code(400).send({ error: 'INVALID_MESSAGE' });
+      }
+
+      const result = await admin.postRequestMessage({
+        actorUserId: user.userId,
+        institutionId: request.params.institutionId,
+        requestId: request.params.requestId,
+        body,
+      });
+
+      return sendAdminResult(
+        reply,
+        result,
+        () => ({ status: 'SENT' }),
+        201,
+      );
+    },
+  );
+
+  if (platform) {
+    async function platformActor(
+      request: FastifyRequest<{ Params: Record<string, string> }>,
+      reply: FastifyReply,
+      idParams: string[],
+    ) {
+      const user = await adminRouteActor(request, reply, idParams);
+
+      if (!user) return null;
+
+      if (!isPlatformAdmin(user)) {
+        reply.code(403).send({ error: 'FORBIDDEN' });
+        return null;
+      }
+
+      return user;
+    }
+
+    app.get('/platform/institutions', async (request, reply) => {
+      const user = await platformActor(request as never, reply, []);
+
+      if (!user) return reply;
+
+      return { institutions: await platform.listInstitutions() };
+    });
+
+    app.post<{
+      Body:
+        | { name?: unknown; slug?: unknown; firstAdminLogin?: unknown }
+        | undefined;
+    }>('/platform/institutions', async (request, reply) => {
+      const user = await platformActor(request as never, reply, []);
+
+      if (!user) return reply;
+
+      const name = boundedText(request.body?.name, 2, 120);
+      const slug =
+        typeof request.body?.slug === 'string'
+          ? request.body.slug.trim().toLowerCase()
+          : '';
+      const login =
+        typeof request.body?.firstAdminLogin === 'string'
+          ? request.body.firstAdminLogin.trim().replace(/^@/, '')
+          : '';
+
+      if (
+        !name ||
+        !SLUG_PATTERN.test(slug) ||
+        !GITHUB_LOGIN_PATTERN.test(login)
+      ) {
+        return reply.code(400).send({ error: 'INVALID_INSTITUTION' });
+      }
+
+      const result = await platform.createInstitution({
+        actorUserId: user.userId,
+        name,
+        slug,
+        firstAdminLogin: login,
+      });
+
+      if (result.status === 'DUPLICATE') {
+        return reply.code(409).send({ error: 'SLUG_ALREADY_EXISTS' });
+      }
+
+      if (result.status === 'USER_NOT_FOUND') {
+        return reply.code(404).send({ error: 'ADMIN_USER_NOT_FOUND' });
+      }
+
+      return reply
+        .code(201)
+        .send({ institutionId: result.institutionId });
+    });
+
+    app.post<{
+      Params: { institutionId: string };
+      Body: { adminLogin?: unknown } | undefined;
+    }>(
+      '/platform/institutions/:institutionId/admins',
+      async (request, reply) => {
+        const user = await platformActor(request, reply, [
+          'institutionId',
+        ]);
+
+        if (!user) return reply;
+
+        const login =
+          typeof request.body?.adminLogin === 'string'
+            ? request.body.adminLogin.trim().replace(/^@/, '')
+            : '';
+
+        if (!GITHUB_LOGIN_PATTERN.test(login)) {
+          return reply.code(400).send({ error: 'INVALID_LOGIN' });
+        }
+
+        const result = await platform.assignInstitutionAdmin({
+          actorUserId: user.userId,
+          institutionId: request.params.institutionId,
+          adminLogin: login,
+        });
+
+        if (result.status === 'NOT_FOUND') {
+          return reply.code(404).send({ error: 'NOT_FOUND' });
+        }
+
+        if (result.status === 'USER_NOT_FOUND') {
+          return reply.code(404).send({ error: 'ADMIN_USER_NOT_FOUND' });
+        }
+
+        return reply.code(201).send({ status: 'ASSIGNED' });
+      },
+    );
+  }
+
+  if (academic) {
+    registerAcademicRoutes(app, academic, adminRouteActor);
+  }
 
   app.post('/auth/logout', async (request, reply) => {
     if (

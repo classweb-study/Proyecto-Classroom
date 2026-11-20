@@ -1,8 +1,11 @@
 import { sql } from 'drizzle-orm';
 import {
   bigint,
+  boolean,
   check,
   index,
+  integer,
+  numeric,
   pgEnum,
   pgTable,
   text,
@@ -44,6 +47,11 @@ export const accessRequestEventActionEnum = pgEnum(
 
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
+  displayName: text('display_name'),
+  // Private: never returned to other users.
+  contactEmail: text('contact_email'),
+  notifyDeadlines: boolean('notify_deadlines').notNull().default(true),
+  notifyFeedback: boolean('notify_feedback').notNull().default(true),
   createdAt: timestamp('created_at', { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -133,6 +141,8 @@ export const institutions = pgTable(
     name: text('name').notNull(),
     slug: text('slug').notNull(),
     description: text('description'),
+    logoUrl: text('logo_url'),
+    accentColor: text('accent_color'),
 
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
@@ -380,6 +390,7 @@ export const institutionAuditActionEnum = pgEnum(
     'INSTITUTION_UPDATED',
     'DOMAIN_ADDED',
     'DOMAIN_REMOVED',
+    'INSTITUTION_CREATED',
   ],
 );
 
@@ -411,5 +422,206 @@ export const institutionAuditEvents = pgTable(
       table.institutionId,
       table.createdAt,
     ),
+  ],
+);
+
+export const accessRequestMessages = pgTable(
+  'access_request_messages',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+
+    requestId: uuid('request_id')
+      .notNull()
+      .references(() => institutionAccessRequests.id),
+
+    authorUserId: uuid('author_user_id')
+      .notNull()
+      .references(() => users.id),
+
+    // Whether the author wrote as the institution's admin or as the requester.
+    fromAdmin: boolean('from_admin').notNull(),
+
+    body: text('body').notNull(),
+
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index('access_request_messages_request_idx').on(
+      table.requestId,
+      table.createdAt,
+    ),
+  ],
+);
+
+export const courseStatusEnum = pgEnum('course_status', [
+  'ACTIVE',
+  'ARCHIVED',
+]);
+
+export const courseMemberRoleEnum = pgEnum('course_member_role', [
+  'TEACHER',
+  'STUDENT',
+]);
+
+export const courseMemberStatusEnum = pgEnum('course_member_status', [
+  'ACTIVE',
+  'REMOVED',
+]);
+
+export const courses = pgTable(
+  'courses',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+
+    institutionId: uuid('institution_id')
+      .notNull()
+      .references(() => institutions.id),
+
+    name: text('name').notNull(),
+    code: text('code'),
+    description: text('description'),
+    status: courseStatusEnum('status').notNull().default('ACTIVE'),
+
+    joinCode: text('join_code').notNull(),
+    joinEnabled: boolean('join_enabled').notNull().default(true),
+
+    createdByUserId: uuid('created_by_user_id')
+      .notNull()
+      .references(() => users.id),
+
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('courses_join_code_unique').on(table.joinCode),
+    index('courses_institution_idx').on(table.institutionId),
+  ],
+);
+
+export const courseMembers = pgTable(
+  'course_members',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+
+    courseId: uuid('course_id')
+      .notNull()
+      .references(() => courses.id),
+
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id),
+
+    role: courseMemberRoleEnum('role').notNull(),
+    status: courseMemberStatusEnum('status').notNull().default('ACTIVE'),
+    groupName: text('group_name'),
+
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('course_members_course_user_unique').on(
+      table.courseId,
+      table.userId,
+    ),
+    index('course_members_user_idx').on(table.userId),
+  ],
+);
+
+export const activityStatusEnum = pgEnum('activity_status', [
+  'DRAFT',
+  'PUBLISHED',
+  'ARCHIVED',
+]);
+
+export const activityKindEnum = pgEnum('activity_kind', [
+  'REPOSITORY',
+  'LINK',
+  'TEXT',
+]);
+
+export const activities = pgTable(
+  'activities',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+
+    courseId: uuid('course_id')
+      .notNull()
+      .references(() => courses.id),
+
+    title: text('title').notNull(),
+    instructions: text('instructions').notNull(),
+    rubric: text('rubric'),
+    kind: activityKindEnum('kind').notNull(),
+    templateRepoUrl: text('template_repo_url'),
+    resourceUrl: text('resource_url'),
+    maxScore: integer('max_score'),
+    dueAt: timestamp('due_at', { withTimezone: true }),
+    allowLate: boolean('allow_late').notNull().default(true),
+    status: activityStatusEnum('status').notNull().default('DRAFT'),
+
+    createdByUserId: uuid('created_by_user_id')
+      .notNull()
+      .references(() => users.id),
+
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index('activities_course_idx').on(table.courseId),
+  ],
+);
+
+export const submissions = pgTable(
+  'submissions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+
+    activityId: uuid('activity_id')
+      .notNull()
+      .references(() => activities.id),
+
+    studentUserId: uuid('student_user_id')
+      .notNull()
+      .references(() => users.id),
+
+    attempt: integer('attempt').notNull(),
+    contentUrl: text('content_url'),
+    commitSha: text('commit_sha'),
+    textContent: text('text_content'),
+    isLate: boolean('is_late').notNull(),
+
+    feedback: text('feedback'),
+    score: numeric('score', { precision: 6, scale: 2 }),
+    reviewedByUserId: uuid('reviewed_by_user_id').references(() => users.id),
+    reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+
+    submittedAt: timestamp('submitted_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('submissions_activity_student_attempt_unique').on(
+      table.activityId,
+      table.studentUserId,
+      table.attempt,
+    ),
+    index('submissions_student_idx').on(table.studentUserId),
   ],
 );

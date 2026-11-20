@@ -21,8 +21,22 @@ export type MyAccessRequest = {
   requestedRole: AccessRequestRole | null;
   assignedRole: AccessRequestRole | null;
   decisionReason: string | null;
+  // The requester's own form data, so a denied request can be corrected and resent.
+  fullName: string | null;
+  contactEmail: string | null;
+  institutionalEmail: string | null;
+  institutionalCode: string | null;
+  requestReason: string | null;
+  messageCount: number;
   createdAt: Date;
   decidedAt: Date | null;
+};
+
+export type MyRequestMessage = {
+  id: string;
+  fromAdmin: boolean;
+  body: string;
+  createdAt: Date;
 };
 
 export type SubmitAccessRequestInput = {
@@ -102,10 +116,16 @@ export function createInstitutionAccessRepository(pool: Pool) {
           requested_role: AccessRequestRole | null;
           assigned_role: AccessRequestRole | null;
           decision_reason: string | null;
+          full_name: string | null;
+          contact_email: string | null;
+          institutional_email: string | null;
+          institutional_code: string | null;
+          request_reason: string | null;
+          message_count: number;
           created_at: Date;
           decided_at: Date | null;
         }>({
-          name: 'access-requests-list-for-user',
+          name: 'access-requests-list-for-user-v2',
           text: `
             SELECT
               r.id AS request_id,
@@ -116,6 +136,13 @@ export function createInstitutionAccessRepository(pool: Pool) {
               r.requested_role,
               r.assigned_role,
               r.decision_reason,
+              r.full_name,
+              r.contact_email,
+              r.institutional_email,
+              r.institutional_code,
+              r.request_reason,
+              (SELECT count(*)::int FROM access_request_messages m
+                WHERE m.request_id = r.id) AS message_count,
               r.created_at,
               r.decided_at
             FROM institution_access_requests r
@@ -138,6 +165,12 @@ export function createInstitutionAccessRepository(pool: Pool) {
           requestedRole: row.requested_role,
           assignedRole: row.assigned_role,
           decisionReason: row.decision_reason,
+          fullName: row.full_name,
+          contactEmail: row.contact_email,
+          institutionalEmail: row.institutional_email,
+          institutionalCode: row.institutional_code,
+          requestReason: row.request_reason,
+          messageCount: row.message_count,
           createdAt: row.created_at,
           decidedAt: row.decided_at,
         }));
@@ -323,6 +356,82 @@ export function createInstitutionAccessRepository(pool: Pool) {
         throw new Error('ACCESS_STORAGE_UNAVAILABLE');
       } finally {
         client?.release();
+      }
+    },
+
+    async listMyRequestMessages(
+      userId: string,
+      requestId: string,
+    ): Promise<
+      | { status: 'OK'; messages: MyRequestMessage[] }
+      | { status: 'NOT_FOUND' }
+    > {
+      try {
+        // Filtering by owner hides other people's requests entirely.
+        const owned = await pool.query(
+          `
+            SELECT 1 FROM institution_access_requests
+             WHERE id = $1 AND user_id = $2
+          `,
+          [requestId, userId],
+        );
+
+        if (owned.rowCount !== 1) {
+          return { status: 'NOT_FOUND' };
+        }
+
+        const result = await pool.query<{
+          id: string;
+          from_admin: boolean;
+          body: string;
+          created_at: Date;
+        }>(
+          `
+            SELECT id, from_admin, body, created_at
+              FROM access_request_messages
+             WHERE request_id = $1
+             ORDER BY created_at
+          `,
+          [requestId],
+        );
+
+        return {
+          status: 'OK',
+          messages: result.rows.map(row => ({
+            id: row.id,
+            fromAdmin: row.from_admin,
+            body: row.body,
+            createdAt: row.created_at,
+          })),
+        };
+      } catch {
+        throw new Error('ACCESS_STORAGE_UNAVAILABLE');
+      }
+    },
+
+    async postMyRequestMessage(
+      userId: string,
+      requestId: string,
+      body: string,
+    ): Promise<{ status: 'OK' } | { status: 'NOT_FOUND' }> {
+      try {
+        const result = await pool.query(
+          `
+            INSERT INTO access_request_messages(
+              request_id, author_user_id, from_admin, body
+            )
+            SELECT id, $2, false, $3
+              FROM institution_access_requests
+             WHERE id = $1 AND user_id = $2
+          `,
+          [requestId, userId, body],
+        );
+
+        return result.rowCount === 1
+          ? { status: 'OK' }
+          : { status: 'NOT_FOUND' };
+      } catch {
+        throw new Error('ACCESS_STORAGE_UNAVAILABLE');
       }
     },
   });

@@ -57,6 +57,12 @@ function createDependencies() {
     cancelAccessRequest: vi.fn(
       async () => ({ status: 'NOT_FOUND' as const }),
     ),
+    listMyRequestMessages: vi.fn(
+      async () => ({ status: 'NOT_FOUND' as const }),
+    ),
+    postMyRequestMessage: vi.fn(
+      async () => ({ status: 'NOT_FOUND' as const }),
+    ),
   };
 
   const admin = {
@@ -78,6 +84,10 @@ function createDependencies() {
               institutionalCode: string | null;
               requestReason: string | null;
               domainMatch: boolean;
+              status: 'PENDING' | 'APPROVED' | 'DENIED' | 'CANCELLED';
+              assignedRole: 'TEACHER' | 'STUDENT' | null;
+              decisionReason: string | null;
+              decidedAt: Date | null;
               createdAt: Date;
             }>;
           }
@@ -175,6 +185,12 @@ function createDependencies() {
       async () => ({ status: 'FORBIDDEN' as const }),
     ),
     listAuditLog: vi.fn(
+      async () => ({ status: 'FORBIDDEN' as const }),
+    ),
+    listRequestMessages: vi.fn(
+      async () => ({ status: 'FORBIDDEN' as const }),
+    ),
+    postRequestMessage: vi.fn(
       async () => ({ status: 'FORBIDDEN' as const }),
     ),
   };
@@ -576,6 +592,7 @@ describe('Auth v1 HTTP boundary', () => {
             avatarUrl: 'https://example.test/avatar.png',
           },
           academicIdentity: null,
+          isPlatformAdmin: false,
           institutions: [],
         },
       });
@@ -656,6 +673,10 @@ describe('Auth v1 HTTP boundary', () => {
           institutionalCode: null,
           requestReason: null,
           domainMatch: false,
+          status: 'PENDING',
+          assignedRole: null,
+          decisionReason: null,
+          decidedAt: null,
           createdAt: new Date('2026-10-01T20:00:00.000Z'),
         },
       ],
@@ -684,6 +705,7 @@ describe('Auth v1 HTTP boundary', () => {
       ).toHaveBeenCalledWith(
         '11111111-1111-4111-8111-111111111111',
         '22222222-2222-4222-8222-222222222222',
+        'PENDING',
       );
     } finally {
       await app.close();

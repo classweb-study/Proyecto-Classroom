@@ -19,6 +19,25 @@ export type PendingAccessRequest = {
   requestReason: string | null;
   // A matching email domain is only a hint for the reviewer, never proof of membership.
   domainMatch: boolean;
+  status: AccessRequestListStatus;
+  assignedRole: AssignableInstitutionRole | null;
+  decisionReason: string | null;
+  decidedAt: Date | null;
+  createdAt: Date;
+};
+
+export type AccessRequestListStatus =
+  | 'PENDING'
+  | 'APPROVED'
+  | 'DENIED'
+  | 'CANCELLED';
+
+export type RequestMessage = {
+  id: string;
+  fromAdmin: boolean;
+  // Requesters see "Administración" instead of an individual admin login.
+  authorLogin: string | null;
+  body: string;
   createdAt: Date;
 };
 
@@ -87,12 +106,15 @@ export type InstitutionOverview = {
     name: string;
     slug: string;
     description: string | null;
+    logoUrl: string | null;
+    accentColor: string | null;
   };
   domains: InstitutionDomain[];
   counts: {
     teachers: number;
     students: number;
     pendingRequests: number;
+    courses: number;
   };
 };
 
@@ -238,6 +260,7 @@ export function createAdminRepository(pool: Pool) {
     async listPendingAccessRequests(
       actorUserId: string,
       institutionId: string,
+      status: AccessRequestListStatus = 'PENDING',
     ): Promise<PendingAccessRequestsResult> {
       let client: PoolClient | undefined;
 
@@ -268,9 +291,13 @@ export function createAdminRepository(pool: Pool) {
           institutional_code: string | null;
           request_reason: string | null;
           domain_match: boolean;
+          status: AccessRequestListStatus;
+          assigned_role: AssignableInstitutionRole | null;
+          decision_reason: string | null;
+          decided_at: Date | null;
           created_at: Date;
         }>({
-          name: 'admin-access-requests-pending-list',
+          name: 'admin-access-requests-list-by-status',
           text: `
             SELECT
               r.id AS request_id,
@@ -294,6 +321,10 @@ export function createAdminRepository(pool: Pool) {
                      split_part(r.contact_email, '@', 2)
                    )
               ) AS domain_match,
+              r.status,
+              r.assigned_role,
+              r.decision_reason,
+              r.decided_at,
               r.created_at
             FROM institution_access_requests r
             JOIN github_identities g
@@ -301,10 +332,13 @@ export function createAdminRepository(pool: Pool) {
             JOIN institutions i
               ON i.id = r.institution_id
             WHERE r.institution_id = $1
-              AND r.status = 'PENDING'
-            ORDER BY r.created_at ASC
+              AND r.status = $2
+            ORDER BY
+              CASE WHEN r.status = 'PENDING' THEN r.created_at END ASC,
+              r.decided_at DESC
+            LIMIT 200
           `,
-          values: [institutionId],
+          values: [institutionId, status],
         });
 
         return {
@@ -323,6 +357,10 @@ export function createAdminRepository(pool: Pool) {
             institutionalCode: row.institutional_code,
             requestReason: row.request_reason,
             domainMatch: row.domain_match,
+            status: row.status,
+            assignedRole: row.assigned_role,
+            decisionReason: row.decision_reason,
+            decidedAt: row.decided_at,
             createdAt: row.created_at,
           })),
         };
@@ -670,17 +708,24 @@ export function createAdminRepository(pool: Pool) {
             name: string;
             slug: string;
             description: string | null;
+            logo_url: string | null;
+            accent_color: string | null;
             teachers: number;
             students: number;
             pending_requests: number;
+            courses: number;
           }>({
-            name: 'admin-institution-overview',
+            name: 'admin-institution-overview-v2',
             text: `
               SELECT
                 i.id,
                 i.name,
                 i.slug,
                 i.description,
+                i.logo_url,
+                i.accent_color,
+                (SELECT count(*)::int FROM courses
+                  WHERE institution_id = i.id AND status = 'ACTIVE') AS courses,
                 (SELECT count(*)::int FROM institution_memberships
                   WHERE institution_id = i.id AND role = 'TEACHER' AND status = 'ACTIVE') AS teachers,
                 (SELECT count(*)::int FROM institution_memberships
@@ -713,12 +758,15 @@ export function createAdminRepository(pool: Pool) {
               name: row.name,
               slug: row.slug,
               description: row.description,
+              logoUrl: row.logo_url,
+              accentColor: row.accent_color,
             },
             domains: domains.rows,
             counts: {
               teachers: row.teachers,
               students: row.students,
               pendingRequests: row.pending_requests,
+              courses: row.courses,
             },
           };
         },
@@ -730,6 +778,8 @@ export function createAdminRepository(pool: Pool) {
       institutionId: string;
       name: string;
       description: string | null;
+      logoUrl: string | null;
+      accentColor: string | null;
     }) {
       return asInstitutionAdmin(
         pool,
@@ -737,11 +787,13 @@ export function createAdminRepository(pool: Pool) {
         input.institutionId,
         async (client): Promise<{ status: 'OK' }> => {
           await client.query({
-            name: 'admin-institution-update',
+            name: 'admin-institution-update-v2',
             text: `
               UPDATE institutions
                  SET name = $2,
                      description = $3,
+                     logo_url = $4,
+                     accent_color = $5,
                      updated_at = now()
                WHERE id = $1
             `,
@@ -749,6 +801,8 @@ export function createAdminRepository(pool: Pool) {
               input.institutionId,
               input.name,
               input.description,
+              input.logoUrl,
+              input.accentColor,
             ],
           });
 
@@ -1013,6 +1067,104 @@ export function createAdminRepository(pool: Pool) {
               createdAt: row.created_at,
             })),
           };
+        },
+      );
+    },
+
+    listRequestMessages(input: {
+      actorUserId: string;
+      institutionId: string;
+      requestId: string;
+    }) {
+      return asInstitutionAdmin(
+        pool,
+        input.actorUserId,
+        input.institutionId,
+        async (
+          client,
+        ): Promise<
+          | { status: 'OK'; messages: RequestMessage[] }
+          | { status: 'NOT_FOUND' }
+        > => {
+          const request = await client.query(
+            `
+              SELECT 1 FROM institution_access_requests
+               WHERE id = $1 AND institution_id = $2
+            `,
+            [input.requestId, input.institutionId],
+          );
+
+          if (request.rowCount !== 1) {
+            return { status: 'NOT_FOUND' };
+          }
+
+          const result = await client.query<{
+            id: string;
+            from_admin: boolean;
+            login: string | null;
+            body: string;
+            created_at: Date;
+          }>(
+            `
+              SELECT m.id, m.from_admin, g.login, m.body, m.created_at
+                FROM access_request_messages m
+                LEFT JOIN github_identities g ON g.user_id = m.author_user_id
+               WHERE m.request_id = $1
+               ORDER BY m.created_at
+            `,
+            [input.requestId],
+          );
+
+          return {
+            status: 'OK',
+            messages: result.rows.map(row => ({
+              id: row.id,
+              fromAdmin: row.from_admin,
+              authorLogin: row.login,
+              body: row.body,
+              createdAt: row.created_at,
+            })),
+          };
+        },
+      );
+    },
+
+    postRequestMessage(input: {
+      actorUserId: string;
+      institutionId: string;
+      requestId: string;
+      body: string;
+    }) {
+      return asInstitutionAdmin(
+        pool,
+        input.actorUserId,
+        input.institutionId,
+        async (
+          client,
+        ): Promise<{ status: 'OK' } | { status: 'NOT_FOUND' }> => {
+          const request = await client.query(
+            `
+              SELECT 1 FROM institution_access_requests
+               WHERE id = $1 AND institution_id = $2
+            `,
+            [input.requestId, input.institutionId],
+          );
+
+          if (request.rowCount !== 1) {
+            return { status: 'NOT_FOUND' };
+          }
+
+          await client.query(
+            `
+              INSERT INTO access_request_messages(
+                request_id, author_user_id, from_admin, body
+              )
+              VALUES ($1, $2, true, $3)
+            `,
+            [input.requestId, input.actorUserId, input.body],
+          );
+
+          return { status: 'OK' };
         },
       );
     },
