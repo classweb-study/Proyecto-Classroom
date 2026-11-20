@@ -6,9 +6,10 @@ import {
 } from 'react';
 
 import {
-  GROUP_LABELS,
+  groupLabel,
   searchSections,
   type AdminPage,
+  type ViewRole,
   type Section,
 } from '../navigation/sections';
 import { SearchIcon } from './icons';
@@ -24,8 +25,10 @@ export const SectionSearch = forwardRef<
   {
     sections: Section[];
     onNavigate: (page: AdminPage) => void;
+    /* Rol activo: cambia el nombre del grupo principal (Administración, Docencia, Aula). */
+    role?: ViewRole;
   }
->(function SectionSearch({ sections, onNavigate }, inputRef) {
+>(function SectionSearch({ sections, onNavigate, role }, inputRef) {
   const listId = useId();
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
@@ -111,7 +114,7 @@ export const SectionSearch = forwardRef<
             onMouseEnter={() => setActiveIndex(index)}
           >
             <span>{section.label}</span>
-            <small>{GROUP_LABELS[section.group]}</small>
+            <small>{groupLabel(section.group, role)}</small>
           </li>
         ))}
         {expanded && results.length === 0 && (

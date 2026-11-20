@@ -1,7 +1,7 @@
 import type { ReactNode, SVGProps } from 'react';
 
 /*
- * Iconos de VMAT. Todos siguen la guía: viewBox 24×24, trazo de 1,8,
+ * Iconos de WebClass. Todos siguen la guía: viewBox 24×24, trazo de 1,8,
  * color heredado (currentColor) y aria-hidden. El tamaño lo pone el CSS
  * del contenedor o la prop `size`.
  *
@@ -273,6 +273,31 @@ export function ExternalLinkIcon(props: IconProps) {
   return (
     <Icon {...props}>
       <path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />
+    </Icon>
+  );
+}
+
+/* Cursos, Mis solicitudes y Plataforma (trazos de Maura en AppShell). */
+export function BookIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4 4.5A1.5 1.5 0 0 1 5.5 3H20v15H5.5A1.5 1.5 0 0 0 4 19.5v-15ZM4 19.5A1.5 1.5 0 0 0 5.5 21H20M8 7h8" />
+    </Icon>
+  );
+}
+
+export function InboxIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M3 13h5l1.5 3h5L16 13h5M5 5h14l2 8v6H3v-6l2-8Z" />
+    </Icon>
+  );
+}
+
+export function GlobeIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM3 12h18M12 3c2.5 2.7 3.5 5.7 3.5 9s-1 6.3-3.5 9c-2.5-2.7-3.5-5.7-3.5-9s1-6.3 3.5-9Z" />
     </Icon>
   );
 }
