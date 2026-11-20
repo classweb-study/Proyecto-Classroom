@@ -33,7 +33,7 @@ export function PlatformPage({ onChanged }: { onChanged: () => void }) {
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
   const [slugTouched, setSlugTouched] = useState(false);
-  const [requests, setRequests] = useState<{id:string; institution:string; login:string}[]>([]);
+  const [requests, setRequests] = useState<{id:string; institution:string; login:string; createdAt:string}[]>([]);
   const [events, setEvents] = useState<(Parameters<typeof describe>[0] & {institution:string})[]>([]);
   const [actor, setActor] = useState('');
   const [busy, setBusy] = useState(false);
@@ -97,6 +97,28 @@ export function PlatformPage({ onChanged }: { onChanged: () => void }) {
         </div>
       </section>
 
+      <section className="admin-panel">
+        <h2>Solicitudes de administradores de institución</h2>
+        {requests.length > 0 && <p className="field-hint">Aprobar reemplaza el rol actual del solicitante en esa institución.</p>}
+        {institutions && !requests.length && <p>No hay solicitudes pendientes.</p>}
+        <div className="access-request-list">{requests.map(r => <article className="access-request-row" key={r.id}>
+          <div className="access-request-user">
+            <div className="request-avatar">{r.login.charAt(0).toUpperCase()}</div>
+            <div><strong>@{r.login}</strong><span>{r.institution} · {formatDate(r.createdAt)}</span></div>
+          </div>
+          <div className="access-request-status"><span className="status-pill pending">Pendiente</span></div>
+          <div className="access-request-actions">
+          {(['APPROVED', 'DENIED'] as const).map(decision =>
+            <button className={decision === 'APPROVED' ? 'approve-button' : 'deny-button'} key={decision} disabled={busy} onClick={async () => {
+              setBusy(true);
+              try {
+                await api(`/platform/admin-requests/${r.id}`, {method:'POST', body:{decision}});
+                setMessage({kind:'ok',text: decision === 'APPROVED' ? 'Solicitud aprobada.' : 'Solicitud denegada.'});
+              } catch (error) {setMessage({kind:'error',text:errorMessage(error, 'No pudimos guardar la decisión.')});}
+              finally {load(); setBusy(false);}
+            }}>{decision === 'APPROVED' ? 'Aprobar' : 'Denegar'}</button>)}
+        </div></article>)}</div>
+      </section>
       <form className="admin-panel stack-form" onSubmit={create}>
         <h2>Nueva institución</h2>
         <div className="form-grid">
@@ -178,22 +200,6 @@ export function PlatformPage({ onChanged }: { onChanged: () => void }) {
             ))}
           </ul>
         )}
-      </section>
-      <section className="admin-panel">
-        <h2>Solicitudes de administradores de institución</h2>
-        {institutions && !requests.length && <p>No hay solicitudes pendientes.</p>}
-        <ul className="plain-list">{requests.map(r => <li key={r.id}>
-          <span>@{r.login} · {r.institution}. Aprobar reemplaza su rol actual en esta institución.</span>
-          {(['APPROVED', 'DENIED'] as const).map(decision =>
-            <button key={decision} disabled={busy} onClick={async () => {
-              setBusy(true);
-              try {
-                await api(`/platform/admin-requests/${r.id}`, {method:'POST', body:{decision}});
-                setMessage({kind:'ok',text: decision === 'APPROVED' ? 'Solicitud aprobada.' : 'Solicitud denegada.'});
-              } catch (error) {setMessage({kind:'error',text:errorMessage(error, 'No pudimos guardar la decisión.')});}
-              finally {load(); setBusy(false);}
-            }}>{decision === 'APPROVED' ? 'Aprobar' : 'Denegar'}</button>)}
-        </li>)}</ul>
       </section>
       <section className="admin-panel">
         <h2>Historial por administrador</h2>
