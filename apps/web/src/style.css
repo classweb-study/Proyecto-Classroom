@@ -3336,3 +3336,18 @@ button:disabled {
     justify-items: start;
   }
 }
+
+.template-task, .repository-summary {
+  display: grid;
+  gap: .4rem;
+  overflow-wrap: anywhere;
+}
+.template-task {
+  margin-top: 1rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid currentColor;
+  border-radius: .8rem;
+  text-decoration: none;
+}
+.template-task:hover strong, .template-task:focus-visible strong { text-decoration: underline; }
+.repository-summary small, .template-task small { color: var(--muted); }

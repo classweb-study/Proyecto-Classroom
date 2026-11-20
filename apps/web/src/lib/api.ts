@@ -53,7 +53,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   DEADLINE_PASSED:
     'La fecha de entrega ya pasó y esta actividad no acepta entregas tardías.',
   INVALID_SUBMISSION:
-    'Revisa la entrega: el enlace debe empezar por https:// (y ser de github.com si es un repositorio) y el commit debe tener entre 7 y 40 caracteres hexadecimales.',
+    'Revisa la entrega: el enlace debe empezar por https:// (y ser de tu copia en github.com si es un repositorio) y el commit debe tener entre 7 y 40 caracteres hexadecimales.',
   SUBMISSION_CONFLICT:
     'Se registró otra entrega al mismo tiempo. Recarga e inténtalo de nuevo.',
   SCORE_OUT_OF_RANGE: 'La nota supera el máximo de la actividad.',
@@ -62,7 +62,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   INVALID_JOIN_CODE: 'El código no tiene un formato válido.',
   INVALID_COURSE: 'Revisa los datos del curso (el nombre es obligatorio).',
   INVALID_ACTIVITY:
-    'Revisa la actividad: título, instrucciones y tipo son obligatorios y los enlaces deben empezar por https://.',
+    'Revisa la actividad: título, instrucciones y tipo son obligatorios; para repositorios se requiere el enlace principal de la plantilla en GitHub y los enlaces deben empezar por https://.',
   INVALID_TEMPLATE: 'El profesor debe elegir una plantilla de GitHub autorizada para la institución.',
   REPOSITORY_CONFLICT: 'Ya existe otro repositorio con ese nombre. Contacta al administrador.',
   REPOSITORIES_UNCONFIGURED: 'La institución aún debe conectar su organización de GitHub.',

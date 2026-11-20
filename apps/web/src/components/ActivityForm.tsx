@@ -169,10 +169,11 @@ export function ActivityForm({
       {kind === 'REPOSITORY' && (
         <div className="form-field">
           <label htmlFor="activity-template">
-            Repositorio plantilla (opcional)
+            Repositorio plantilla de GitHub
           </label>
           <input
             id="activity-template"
+            required
             type="url"
             placeholder="https://github.com/organizacion/plantilla"
             maxLength={500}
@@ -180,7 +181,7 @@ export function ActivityForm({
             onChange={event => setTemplateRepoUrl(event.target.value)}
           />
           <span className="field-hint">
-            Con una plantilla de GitHub autorizada, cada estudiante puede aceptar la tarea para crear su copia privada.
+            En GitHub activa «Template repository» y da acceso a tus estudiantes. Pega aquí el enlace principal del repositorio.
           </span>
         </div>
       )}

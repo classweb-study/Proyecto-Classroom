@@ -1379,12 +1379,13 @@ export function createAcademicRepository(pool: Pool) {
 
         const activity = await client.query<{
           kind: ActivityKind;
+          template_repo_url: string | null;
           due_at: Date | null;
           allow_late: boolean;
           late: boolean;
         }>(
           `
-            SELECT kind, due_at, allow_late,
+            SELECT kind, template_repo_url, due_at, allow_late,
                    (due_at IS NOT NULL AND due_at < now()) AS late
               FROM activities
              WHERE id = $1
@@ -1400,7 +1401,8 @@ export function createAcademicRepository(pool: Pool) {
           row.kind === 'TEXT'
             ? Boolean(textContent)
             : row.kind === 'REPOSITORY'
-              ? Boolean(contentUrl && GITHUB_REPO_URL.test(contentUrl))
+              ? Boolean(contentUrl && GITHUB_REPO_URL.test(contentUrl) &&
+                contentUrl.toLowerCase().replace(/(?:\.git)?\/?$/, '') !== row.template_repo_url?.toLowerCase().replace(/(?:\.git)?\/?$/, ''))
               : Boolean(contentUrl);
 
         if (!valid || (commitSha && row.kind !== 'REPOSITORY')) {

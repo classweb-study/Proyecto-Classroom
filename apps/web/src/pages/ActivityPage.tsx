@@ -5,6 +5,7 @@ import {
   type FormEvent,
 } from 'react';
 
+import { repositoryPath, RepositoryLink } from '../components/RepositoryLink';
 import { ActivityForm } from '../components/ActivityForm';
 import {
   ACTIVITY_STATUS_LABEL,
@@ -126,17 +127,12 @@ export function ActivityPage({ activityId, onBack }: ActivityPageProps) {
           <h2>Instrucciones</h2>
           <p className="pre-wrap">{activity.instructions}</p>
 
-          {activity.templateRepoUrl && (
-            <p>
-              Repositorio plantilla:{' '}
-              <a
-                href={activity.templateRepoUrl}
-                target="_blank"
-                rel="noreferrer noopener"
-              >
-                {activity.templateRepoUrl}
-              </a>
-            </p>
+          {activity.kind === 'REPOSITORY' && activity.templateRepoUrl && repositoryPath(activity.templateRepoUrl) && (
+            <a className="template-task" href={'https://github.com/' + repositoryPath(activity.templateRepoUrl) + '/generate'}
+              target="_blank" rel="noreferrer">
+              <strong>{activity.title}</strong><span>Crear mi copia en GitHub ↗</span>
+              <small>Plantilla · {repositoryPath(activity.templateRepoUrl)}</small>
+            </a>
           )}
 
           {activity.resourceUrl && (
@@ -170,10 +166,10 @@ export function ActivityPage({ activityId, onBack }: ActivityPageProps) {
   );
 }
 
-function SubmissionContent({ submission }: { submission: Submission }) {
+function SubmissionContent({ submission, repository }: { submission: Submission; repository: boolean }) {
   return (
     <>
-      {submission.contentUrl && (
+      {submission.contentUrl && repository && repositoryPath(submission.contentUrl) ? <RepositoryLink url={submission.contentUrl} /> : submission.contentUrl && (
         <a
           href={submission.contentUrl}
           target="_blank"
@@ -218,36 +214,6 @@ function StudentSubmissions({
 
   useEffect(load, [load]);
 
-  const [repoUrl, setRepoUrl] = useState('');
-  const [accepting, setAccepting] = useState(false);
-  const [repoMessage, setRepoMessage] = useState('');
-  const repositoryEndpoint = `/activities/${activity.id}/repository`;
-  useEffect(() => {
-    if (activity.kind !== 'REPOSITORY') return;
-    let current = true;
-    api<{ url: string | null }>(repositoryEndpoint).then(({ url }) => {
-      if (current && url) {
-        setRepoUrl(url);
-        setContentUrl(value => value || url);
-      }
-    }).catch(() => {});
-    return () => { current = false; };
-  }, [repositoryEndpoint, activity.kind]);
-
-  async function accept() {
-    setAccepting(true);
-    setRepoMessage('');
-    try {
-      const { url } = await api<{ url: string }>(repositoryEndpoint, { method: 'POST' });
-      setRepoUrl(url);
-      setContentUrl(url);
-    } catch (error) {
-      setRepoMessage(errorMessage(error, 'GitHub no pudo preparar tu repositorio. Puedes volver a intentarlo.'));
-    } finally {
-      setAccepting(false);
-    }
-  }
-
   const closed = pastDue && !activity.allowLate;
 
   async function submit(event: FormEvent) {
@@ -288,21 +254,6 @@ function StudentSubmissions({
 
   return (
     <>
-      {activity.kind === 'REPOSITORY' && (activity.templateRepoUrl || repoUrl) && (
-        <section className="admin-panel">
-          <h2>Mi repositorio</h2>
-          {repoUrl ? <>
-            <a className="link-button" href={repoUrl} target="_blank" rel="noreferrer">Abrir mi repositorio en GitHub</a>
-            <p>Si GitHub te muestra una invitación de colaboración, acéptala para empezar.</p>
-          </> : <>
-            <p>Al aceptar, WebClass crea tu copia privada de la plantilla y te invita a colaborar.</p>
-            <button type="button" className="primary-action" onClick={() => void accept()} disabled={accepting || closed}>
-              {accepting ? 'Preparando repositorio…' : 'Aceptar tarea'}
-            </button>
-          </>}
-          {repoMessage && <p role="alert">{repoMessage}</p>}
-        </section>
-      )}
       <section className="admin-panel">
         <div className="admin-panel-heading">
           <div>
@@ -371,11 +322,11 @@ function StudentSubmissions({
 
             {activity.kind === 'REPOSITORY' && (
               <p className="field-hint">
-                Asegúrate de que tu profesor pueda ver el repositorio
-                (público o con acceso concedido). WebClass todavía no
-                comprueba la visibilidad del repositorio en GitHub.
+                Si tu repositorio es privado, invita a tu profesor en GitHub para que pueda revisarlo.
               </p>
             )}
+
+            {activity.kind === 'REPOSITORY' && <RepositoryLink url={contentUrl} />}
 
             {pastDue && (
               <p className="field-hint">
@@ -438,7 +389,7 @@ function StudentSubmissions({
                     </span>
                   )}
                 </div>
-                <SubmissionContent submission={submission} />
+                <SubmissionContent repository={activity.kind === 'REPOSITORY'} submission={submission} />
                 {submission.feedback && (
                   <blockquote className="feedback">
                     {submission.feedback}
@@ -547,7 +498,7 @@ function TeacherSubmissions({ activity }: { activity: Activity }) {
                 <div className="submission-detail">
                   {row.latest ? (
                     <>
-                      <SubmissionContent submission={row.latest} />
+                      <SubmissionContent repository={activity.kind === 'REPOSITORY'} submission={row.latest} />
                       <span className="muted">
                         {formatDate(row.latest.submittedAt)}
                       </span>
