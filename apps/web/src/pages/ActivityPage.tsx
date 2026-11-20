@@ -162,7 +162,7 @@ export function ActivityPage({ activityId, onBack }: ActivityPageProps) {
       )}
 
       {role === 'STUDENT' ? (
-        <StudentSubmissions activity={activity} pastDue={pastDue} />
+        <StudentSubmissions key={activity.id} activity={activity} pastDue={pastDue} />
       ) : (
         <TeacherSubmissions activity={activity} />
       )}
@@ -218,6 +218,36 @@ function StudentSubmissions({
 
   useEffect(load, [load]);
 
+  const [repoUrl, setRepoUrl] = useState('');
+  const [accepting, setAccepting] = useState(false);
+  const [repoMessage, setRepoMessage] = useState('');
+  const repositoryEndpoint = `/activities/${activity.id}/repository`;
+  useEffect(() => {
+    if (activity.kind !== 'REPOSITORY') return;
+    let current = true;
+    api<{ url: string | null }>(repositoryEndpoint).then(({ url }) => {
+      if (current && url) {
+        setRepoUrl(url);
+        setContentUrl(value => value || url);
+      }
+    }).catch(() => {});
+    return () => { current = false; };
+  }, [repositoryEndpoint, activity.kind]);
+
+  async function accept() {
+    setAccepting(true);
+    setRepoMessage('');
+    try {
+      const { url } = await api<{ url: string }>(repositoryEndpoint, { method: 'POST' });
+      setRepoUrl(url);
+      setContentUrl(url);
+    } catch (error) {
+      setRepoMessage(errorMessage(error, 'GitHub no pudo preparar tu repositorio. Puedes volver a intentarlo.'));
+    } finally {
+      setAccepting(false);
+    }
+  }
+
   const closed = pastDue && !activity.allowLate;
 
   async function submit(event: FormEvent) {
@@ -258,6 +288,21 @@ function StudentSubmissions({
 
   return (
     <>
+      {activity.kind === 'REPOSITORY' && (activity.templateRepoUrl || repoUrl) && (
+        <section className="admin-panel">
+          <h2>Mi repositorio</h2>
+          {repoUrl ? <>
+            <a className="link-button" href={repoUrl} target="_blank" rel="noreferrer">Abrir mi repositorio en GitHub</a>
+            <p>Si GitHub te muestra una invitación de colaboración, acéptala para empezar.</p>
+          </> : <>
+            <p>Al aceptar, WebClass crea tu copia privada de la plantilla y te invita a colaborar.</p>
+            <button type="button" className="primary-action" onClick={() => void accept()} disabled={accepting || closed}>
+              {accepting ? 'Preparando repositorio…' : 'Aceptar tarea'}
+            </button>
+          </>}
+          {repoMessage && <p role="alert">{repoMessage}</p>}
+        </section>
+      )}
       <section className="admin-panel">
         <div className="admin-panel-heading">
           <div>

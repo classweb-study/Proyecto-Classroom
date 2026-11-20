@@ -1,3 +1,4 @@
+import { assignmentConfig, generateAssignment } from './assignment-github.js';
 import type {
   FastifyInstance,
   FastifyReply,
@@ -23,6 +24,9 @@ const RESULT_ERRORS: Record<string, [number, string]> = {
   NOT_FOUND: [404, 'NOT_FOUND'],
   SELF: [409, 'CANNOT_REMOVE_YOURSELF'],
   ALREADY_MEMBER: [409, 'ALREADY_MEMBER'],
+  INVALID_TEMPLATE: [400, 'INVALID_TEMPLATE'],
+  REPOSITORY_CONFLICT: [409, 'REPOSITORY_CONFLICT'],
+  REPOSITORIES_UNCONFIGURED: [503, 'REPOSITORIES_UNCONFIGURED'],
   REMOVED: [403, 'COURSE_ACCESS_REMOVED'],
   NOT_IN_INSTITUTION: [409, 'USER_NOT_IN_INSTITUTION'],
   COURSE_ARCHIVED: [409, 'COURSE_ARCHIVED'],
@@ -162,6 +166,32 @@ export function registerAcademicRoutes(
   academic: AcademicRepository,
   routeActor: RouteActor,
 ) {
+  app.route<{ Params: { activityId: string } }>({
+    method: ['GET', 'POST'],
+    url: '/activities/:activityId/repository',
+    async handler(request, reply) {
+      const user = await routeActor(request, reply, ['activityId']);
+      if (!user) return reply;
+      const config = assignmentConfig();
+      const owners = Object.fromEntries(Object.entries(config).map(([id, value]) => [id, value.owner]));
+      const result = await academic.assignmentRepository(user.userId, request.params.activityId, request.method === 'POST', owners);
+      if (result.status !== 'OK') return sendResult(reply, result, () => ({}));
+      if (!result.reservation || result.url) return { url: result.url };
+      let url: string;
+      try {
+        url = await generateAssignment(config[result.institutionId], result.reservation, result.student, result.teachers);
+      } catch (error) {
+        const code = error instanceof Error ? error.message : '';
+        if (['INVALID_TEMPLATE', 'REPOSITORY_CONFLICT', 'REPOSITORIES_UNCONFIGURED'].includes(code)) {
+          return sendResult(reply, { status: code }, () => ({}));
+        }
+        return reply.code(502).send({ error: 'GITHUB_ASSIGNMENT_FAILED' });
+      }
+      await academic.completeAssignmentRepository(result.reservation.id, url);
+      return { url };
+    },
+  });
+
   app.get('/me/profile', async (request, reply) => {
     const user = await routeActor(request as never, reply, []);
     if (!user) return reply;
