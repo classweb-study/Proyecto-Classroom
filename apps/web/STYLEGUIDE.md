@@ -296,7 +296,7 @@ Para el formulario de solicitud de acceso hay un aviso listo, `EmailKindNotice` 
 
 - **Login:** si la URL trae `?auth_error=CODIGO`, se muestra un aviso con un texto para personas (`src/session/auth-errors.ts`) y el parámetro se borra de la URL. Nunca se muestra texto libre de la URL. Al hacer clic en "Continuar con GitHub" aparece "Abriendo GitHub…" para que nadie haga doble clic.
 - **Bienvenida:** la primera vez, Inicio muestra tres consejos (buscador con `/`, Apariencia y el menú del avatar). Se cierra con "Entendido" o la X y se recuerda en este navegador (`vmat-welcome-dismissed`). Se puede volver a mostrar desde Mi perfil.
-- **Mi perfil** (Ajustes → Mi perfil, o desde el avatar): cuenta de GitHub, instituciones con rol e identidad académica, apariencia y cerrar sesión. Es de solo lectura: los roles y el código los cambia la administración, y la foto y el usuario se cambian en GitHub.
+- **Mi perfil** (Ajustes → Mi perfil, o desde el avatar): cuenta de GitHub, instituciones con rol e identidad académica, apariencia y cerrar sesión. Se pueden editar el nombre para mostrar, el correo de contacto y los avisos de entregas y retroalimentación. Los roles y el código los cambia la administración, y la foto y el usuario se cambian en GitHub.
 
 ## Compatibilidad con ramas anteriores a los tokens
 
@@ -319,7 +319,7 @@ Para el formulario de solicitud de acceso hay un aviso listo, `EmailKindNotice` 
 | Lógica sin navegador (tokens, contraste, navegación, sesión, errores de login) | `tests/unit/*.test.ts` | `npm test` |
 | Render de componentes y pantallas (texto, roles, ARIA, estados) | `tests/unit/components-render.test.ts` | `npm test` |
 | Contratos con el trabajo de otros: título que espera el E2E de Jero y props del selector de institución de Maura | `tests/unit/components-render.test.ts` | `npm test` |
-| Recorrido visual con navegador: 9 escenarios × 3 anchos × 3 combinaciones de color, teclado, desborde, consola y, si está instalado, axe-core | `apps/web/scripts/visual-check.mjs` | `npm run dev:web` y en otra terminal `node apps/web/scripts/visual-check.mjs` |
+| Recorrido visual con navegador: 10 escenarios (estudiante, profesor y administrador con sus secciones) × 3 anchos × 3 combinaciones de color, teclado, desborde, consola y, si está instalado, axe-core | `apps/web/scripts/visual-check.mjs` | `npm run dev:web` y en otra terminal `node apps/web/scripts/visual-check.mjs` |
 
 Las pruebas de render usan `react-dom/server`, que ya está instalado, para no agregar `jsdom` ni Testing Library a `package.json`.
 
