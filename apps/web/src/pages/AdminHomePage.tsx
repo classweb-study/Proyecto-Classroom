@@ -1,3 +1,4 @@
+import { RemovedMembersPanel } from './RemovedMembersPanel';
 import { useEffect, useState } from 'react';
 
 type AdminHomePageProps = {
@@ -94,6 +95,8 @@ export function AdminHomePage({
     status: 'loading',
   });
 
+  const [revision, setRevision] = useState(0);
+
   useEffect(() => {
     const controller = new AbortController();
     const options = {
@@ -135,7 +138,7 @@ export function AdminHomePage({
       });
 
     return () => controller.abort();
-  }, [institutionId]);
+  }, [institutionId, revision]);
 
   return (
     <div className="admin-page">
@@ -153,6 +156,9 @@ export function AdminHomePage({
           Administrador
         </span>
       </section>
+
+      <RemovedMembersPanel key={institutionId} institutionId={institutionId} institutionName={institutionName}
+        onOpenRequests={onOpenRequests} onRestored={() => setRevision(value => value + 1)} />
 
       {onManageInstitutions && (
         <section className="admin-panel">

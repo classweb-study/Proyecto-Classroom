@@ -179,6 +179,8 @@ function createDependencies() {
     removeInstitutionDomain: vi.fn(
       async () => ({ status: 'FORBIDDEN' as const }),
     ),
+    listRemovedMembers: vi.fn(async () => ({ status: 'OK' as const, members: [] })),
+    restoreMembership: vi.fn(async () => ({ status: 'OK' as const })),
     revokeMembership: vi.fn(
       async () => ({ status: 'FORBIDDEN' as const }),
     ),

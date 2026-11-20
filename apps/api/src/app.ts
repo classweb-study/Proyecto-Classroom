@@ -109,6 +109,7 @@ const ADMIN_RESULT_ERRORS: Record<string, [number, string]> = {
   FORBIDDEN: [403, 'FORBIDDEN'],
   NOT_FOUND: [404, 'NOT_FOUND'],
   SELF: [409, 'CANNOT_MODIFY_OWN_MEMBERSHIP'],
+  STALE_MEMBERSHIP: [409, 'STALE_MEMBERSHIP'],
   SAME_ROLE: [409, 'ROLE_UNCHANGED'],
   DUPLICATE: [409, 'DOMAIN_ALREADY_EXISTS'],
 };
@@ -984,6 +985,22 @@ export function createApp(dependencies?: AppDependencies) {
     });
     return sendAdminResult(reply, result, () => ({ saved: true }));
   });
+
+  app.get<{ Params: { institutionId: string } }>('/admin/institutions/:institutionId/removed-members', async (request, reply) => {
+    const actor = await adminRouteActor(request, reply, ['institutionId']);
+    if (!actor) return reply;
+    const result = await admin.listRemovedMembers(actor.userId, request.params.institutionId);
+    return sendAdminResult(reply, result, value => ({ members: value.members }));
+  });
+
+  app.post<{ Params: { institutionId: string; membershipId: string } }>(
+    '/admin/institutions/:institutionId/members/:membershipId/restore', async (request, reply) => {
+      const actor = await adminRouteActor(request, reply, ['institutionId', 'membershipId']);
+      if (!actor) return reply;
+      const result = await admin.restoreMembership(actor.userId, request.params.institutionId, request.params.membershipId);
+      return sendAdminResult(reply, result, () => ({ restored: true }));
+    },
+  );
 
   app.get<{ Params: { institutionId: string } }>(
     '/admin/institutions/:institutionId',

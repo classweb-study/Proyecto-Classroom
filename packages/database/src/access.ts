@@ -207,6 +207,8 @@ export function createInstitutionAccessRepository(pool: Pool) {
           return { status: 'INSTITUTION_NOT_FOUND' };
         }
 
+        // Serialize a new request with an administrator restoring the previous role.
+        await client.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [input.userId]);
         const membership = await client.query({
           name: 'access-active-membership-exists',
           text: `
