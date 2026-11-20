@@ -1,6 +1,17 @@
 import { useCallback, useEffect, useState } from 'react';
 
+import { RequestMessages } from '../components/RequestMessages';
+
 type AssignableRole = 'TEACHER' | 'STUDENT';
+
+type RequestStatus = 'PENDING' | 'APPROVED' | 'DENIED' | 'CANCELLED';
+
+const STATUS_FILTERS: Array<[RequestStatus, string]> = [
+  ['PENDING', 'Pendientes'],
+  ['APPROVED', 'Aprobadas'],
+  ['DENIED', 'Rechazadas'],
+  ['CANCELLED', 'Canceladas'],
+];
 
 type PendingAccessRequest = {
   id: string;
@@ -9,7 +20,23 @@ type PendingAccessRequest = {
   avatarUrl: string | null;
   institutionId: string;
   institutionName: string;
+  requestedRole: AssignableRole | null;
+  fullName: string | null;
+  contactEmail: string | null;
+  institutionalEmail: string | null;
+  institutionalCode: string | null;
+  requestReason: string | null;
+  domainMatch: boolean;
+  status: RequestStatus;
+  assignedRole: AssignableRole | null;
+  decisionReason: string | null;
+  decidedAt: string | null;
   createdAt: string;
+};
+
+const ROLE_LABEL: Record<AssignableRole, string> = {
+  TEACHER: 'Docente',
+  STUDENT: 'Estudiante',
 };
 
 type AdminUsersPageProps = {
@@ -45,13 +72,24 @@ export function AdminUsersPage({
 
   const [processingId, setProcessingId] =
     useState<string | null>(null);
+  const [denyingId, setDenyingId] =
+    useState<string | null>(null);
+  const [denyReason, setDenyReason] = useState('');
+  const [statusFilter, setStatusFilter] =
+    useState<RequestStatus>('PENDING');
+  const [search, setSearch] = useState('');
+  const [roleFilter, setRoleFilter] = useState<AssignableRole | 'ALL'>(
+    'ALL',
+  );
+  const [domainOnly, setDomainOnly] = useState(false);
+  const [openThread, setOpenThread] = useState<string | null>(null);
 
   const loadRequests = useCallback(async () => {
     setState({ status: 'loading' });
 
     try {
       const response = await fetch(
-        `/admin/institutions/${institutionId}/access-requests`,
+        `/admin/institutions/${institutionId}/access-requests?status=${statusFilter}`,
         {
           credentials: 'same-origin',
         },
@@ -76,11 +114,30 @@ export function AdminUsersPage({
           'No pudimos cargar las solicitudes de acceso.',
       });
     }
-  }, [institutionId]);
+  }, [institutionId, statusFilter]);
 
   useEffect(() => {
     void loadRequests();
   }, [loadRequests]);
+
+  const term = search.trim().toLowerCase();
+  const visibleRequests =
+    state.status === 'ready'
+      ? state.requests.filter(
+          request =>
+            (roleFilter === 'ALL' || request.requestedRole === roleFilter) &&
+            (!domainOnly || request.domainMatch) &&
+            (term === '' ||
+              [
+                request.fullName,
+                request.githubLogin,
+                request.contactEmail,
+                request.institutionalEmail,
+                request.institutionalCode,
+              ].some(value => value?.toLowerCase().includes(term))),
+        )
+      : [];
+  const pendingView = statusFilter === 'PENDING';
 
   async function approve(
     requestId: string,
@@ -126,6 +183,10 @@ export function AdminUsersPage({
         {
           method: 'POST',
           credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ reason: denyReason }),
         },
       );
 
@@ -133,6 +194,8 @@ export function AdminUsersPage({
         throw new Error('Denial failed');
       }
 
+      setDenyingId(null);
+      setDenyReason('');
       await loadRequests();
     } catch {
       setState({
@@ -162,17 +225,67 @@ export function AdminUsersPage({
         <div className="admin-panel-heading">
           <div>
             <p className="page-kicker">SOLICITUDES DE ACCESO</p>
-            <h2>Pendientes de revisión</h2>
+            <h2>
+              {STATUS_FILTERS.find(([id]) => id === statusFilter)?.[1]}
+            </h2>
           </div>
 
           {state.status === 'ready' && (
             <span className="request-count">
-              {state.requests.length}{' '}
-              {state.requests.length === 1
-                ? 'pendiente'
-                : 'pendientes'}
+              {visibleRequests.length} de {state.requests.length}
             </span>
           )}
+        </div>
+
+        <div className="filter-bar">
+          <div className="form-field compact">
+            <label htmlFor="request-status-filter">Estado</label>
+            <select
+              id="request-status-filter"
+              value={statusFilter}
+              onChange={event =>
+                setStatusFilter(event.target.value as RequestStatus)
+              }
+            >
+              {STATUS_FILTERS.map(([id, label]) => (
+                <option key={id} value={id}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="form-field compact">
+            <label htmlFor="request-role-filter">Rol solicitado</label>
+            <select
+              id="request-role-filter"
+              value={roleFilter}
+              onChange={event =>
+                setRoleFilter(event.target.value as AssignableRole | 'ALL')
+              }
+            >
+              <option value="ALL">Todos</option>
+              <option value="STUDENT">Estudiante</option>
+              <option value="TEACHER">Docente</option>
+            </select>
+          </div>
+          <div className="form-field grow">
+            <label htmlFor="request-search">Buscar</label>
+            <input
+              id="request-search"
+              type="search"
+              placeholder="Nombre, usuario, correo o código"
+              value={search}
+              onChange={event => setSearch(event.target.value)}
+            />
+          </div>
+          <label className="inline-check">
+            <input
+              type="checkbox"
+              checked={domainOnly}
+              onChange={event => setDomainOnly(event.target.checked)}
+            />
+            Solo con dominio coincidente
+          </label>
         </div>
 
         {state.status === 'loading' && (
@@ -197,30 +310,32 @@ export function AdminUsersPage({
         )}
 
         {state.status === 'ready' &&
-          state.requests.length === 0 && (
+          visibleRequests.length === 0 && (
             <div className="empty-admin-state large">
               <div className="empty-admin-letter">U</div>
-              <strong>No hay solicitudes pendientes</strong>
+              <strong>No hay solicitudes para mostrar</strong>
               <p>
-                Cuando una nueva cuenta inicie sesión en WebClass,
-                aparecerá aquí hasta que decidas aprobarla o
-                denegarla.
+                {pendingView && state.requests.length === 0
+                  ? 'Cuando alguien solicite acceso a esta institución, aparecerá aquí hasta que decidas aprobarla o denegarla.'
+                  : 'Prueba con otros filtros.'}
               </p>
             </div>
           )}
 
         {state.status === 'ready' &&
-          state.requests.length > 0 && (
+          visibleRequests.length > 0 && (
             <div className="access-request-list">
-              {state.requests.map(request => {
+              {visibleRequests.map(request => {
                 const processing =
                   processingId === request.id;
+                const denying = denyingId === request.id;
 
                 return (
-                  <article
-                    className="access-request-row"
+                  <div
+                    className="access-request-item"
                     key={request.id}
                   >
+                  <article className="access-request-row">
                     <div className="access-request-user">
                       {request.avatarUrl ? (
                         <img
@@ -237,22 +352,59 @@ export function AdminUsersPage({
 
                       <div>
                         <strong>
-                          @{request.githubLogin}
+                          {request.fullName ??
+                            `@${request.githubLogin}`}
                         </strong>
                         <span>
-                          GitHub conectado ·{' '}
+                          @{request.githubLogin} ·{' '}
                           {formatDate(request.createdAt)}
+                          {request.requestedRole &&
+                            ` · Solicita: ${ROLE_LABEL[request.requestedRole]}`}
                         </span>
                       </div>
                     </div>
 
                     <div className="access-request-status">
-                      <span className="status-pill pending">
-                        Pendiente
-                      </span>
+                      {request.domainMatch && (
+                        <span
+                          className="status-pill domain-match"
+                          title="El correo coincide con un dominio de la institución. Es una pista, no una prueba."
+                        >
+                          Dominio coincide
+                        </span>
+                      )}
+                      {!pendingView && (
+                        <span
+                          className={`status-pill request-${request.status.toLowerCase()}`}
+                        >
+                          {STATUS_FILTERS.find(
+                            ([id]) => id === request.status,
+                          )?.[1].replace(/s$/, '')}
+                          {request.assignedRole &&
+                            ` · ${ROLE_LABEL[request.assignedRole]}`}
+                        </span>
+                      )}
+                      {pendingView && !request.domainMatch && (
+                        <span className="status-pill pending">
+                          Pendiente
+                        </span>
+                      )}
                     </div>
 
                     <div className="access-request-actions">
+                      <button
+                        type="button"
+                        className="link-button"
+                        onClick={() =>
+                          setOpenThread(
+                            openThread === request.id ? null : request.id,
+                          )
+                        }
+                      >
+                        Mensajes
+                      </button>
+                      {pendingView && (
+                      <>
                       <button
                         type="button"
                         className="approve-button"
@@ -285,16 +437,115 @@ export function AdminUsersPage({
                         type="button"
                         className="deny-button"
                         disabled={processing}
-                        onClick={() =>
-                          void deny(request.id)
-                        }
+                        onClick={() => {
+                          setDenyingId(
+                            denying ? null : request.id,
+                          );
+                          setDenyReason('');
+                        }}
                       >
                         {processing
                           ? 'Procesando…'
                           : 'Denegar'}
                       </button>
+                      </>
+                      )}
                     </div>
                   </article>
+
+                  {!pendingView && request.decidedAt && (
+                    <p className="field-hint decision-line">
+                      Decidida {formatDate(request.decidedAt)}
+                      {request.decisionReason &&
+                        ` · Motivo: ${request.decisionReason}`}
+                    </p>
+                  )}
+
+                  {openThread === request.id && (
+                    <RequestMessages
+                      endpoint={`/admin/institutions/${institutionId}/access-requests/${request.id}/messages`}
+                      viewer="admin"
+                    />
+                  )}
+
+                  {(request.contactEmail ||
+                    request.institutionalEmail ||
+                    request.institutionalCode ||
+                    request.requestReason) && (
+                    <dl className="access-request-details">
+                      {request.contactEmail && (
+                        <div>
+                          <dt>Correo de contacto</dt>
+                          <dd>{request.contactEmail}</dd>
+                        </div>
+                      )}
+                      {request.institutionalEmail && (
+                        <div>
+                          <dt>Correo institucional</dt>
+                          <dd>{request.institutionalEmail}</dd>
+                        </div>
+                      )}
+                      {request.institutionalCode && (
+                        <div>
+                          <dt>Código universitario</dt>
+                          <dd>{request.institutionalCode}</dd>
+                        </div>
+                      )}
+                      {request.requestReason && (
+                        <div className="wide">
+                          <dt>Motivo</dt>
+                          <dd>{request.requestReason}</dd>
+                        </div>
+                      )}
+                    </dl>
+                  )}
+
+                  {denying && (
+                    <form
+                      className="deny-reason-form"
+                      onSubmit={event => {
+                        event.preventDefault();
+                        void deny(request.id);
+                      }}
+                    >
+                      <label htmlFor={`deny-${request.id}`}>
+                        Motivo del rechazo (lo verá el
+                        solicitante)
+                      </label>
+                      <textarea
+                        id={`deny-${request.id}`}
+                        required
+                        maxLength={500}
+                        rows={3}
+                        placeholder="Ej.: Solicita acceso a tu institución correspondiente."
+                        value={denyReason}
+                        onChange={event =>
+                          setDenyReason(event.target.value)
+                        }
+                      />
+                      <div className="form-actions">
+                        <button
+                          type="button"
+                          className="secondary-action"
+                          disabled={processing}
+                          onClick={() => setDenyingId(null)}
+                        >
+                          Volver
+                        </button>
+                        <button
+                          type="submit"
+                          className="deny-button"
+                          disabled={
+                            processing ||
+                            denyReason.trim().length === 0
+                          }
+                        >
+                          Confirmar rechazo
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                  </div>
                 );
               })}
             </div>

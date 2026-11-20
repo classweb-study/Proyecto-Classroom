@@ -2,16 +2,20 @@ import {
   useEffect,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
 } from 'react';
 
 import {
+  BookIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   CloseIcon,
+  GlobeIcon,
   GridIcon,
   HalfCircleIcon,
   HomeIcon,
+  InboxIcon,
   InstitutionIcon,
   MenuIcon,
   MoonIcon,
@@ -26,14 +30,15 @@ import { ProfileMenu } from './ProfileMenu';
 import { SectionSearch } from './SectionSearch';
 
 import {
-  GROUP_LABELS,
+  ROLE_NAME,
   breadcrumbsFor,
+  groupLabel,
   pageTitle,
-  primaryRoleLabel,
-  visibleSections,
-  type AdminPage,
+  sectionsFor,
+  type AppPage,
   type Section,
   type SectionGroup,
+  type ViewRole,
 } from '../navigation/sections';
 import {
   THEME_ADJECTIVES,
@@ -45,42 +50,47 @@ import {
   useAppearance,
 } from '../theme/appearance-store';
 
-export type { AdminPage } from '../navigation/sections';
+export type { AdminPage, AppPage, ViewRole } from '../navigation/sections';
 
 type AppShellProps = {
-  activePage: AdminPage;
-  onNavigate: (page: AdminPage) => void;
+  activePage: AppPage;
+  onNavigate: (page: AppPage) => void;
   githubLogin: string;
   avatarUrl: string | null;
   institutionName: string;
-  /*
-   * Selector de institución activa, para quien pertenece a varias.
-   * Mismos nombres que usa main.tsx en la rama feat/maura-admin-institution.
-   * Son opcionales: sin ellos se muestra solo el nombre.
-   */
+  /* Logo y color propios de la institución, si los configuró. */
+  institutionLogoUrl?: string | null;
+  institutionAccent?: string | null;
+  /* Selector de institución activa, para quien pertenece a varias. */
   institutions?: Array<{ id: string; name: string }>;
   activeInstitutionId?: string;
   onSwitchInstitution?: (institutionId: string) => void;
   roles: string[];
+  /* Rol con el que se está viendo la app y cambio entre roles. */
+  viewRole?: ViewRole;
+  onSwitchRole?: (role: ViewRole) => void;
+  isPlatformAdmin?: boolean;
   loggingOut: boolean;
   onLogout: () => void;
   children: ReactNode;
 };
 
-const ICONS: Record<AdminPage, ReactNode> = {
+const ICONS: Record<AppPage, ReactNode> = {
   home: <HomeIcon />,
   users: <UsersIcon />,
   teachers: <TeacherIcon />,
   students: <StudentIcon />,
   institution: <InstitutionIcon />,
+  courses: <BookIcon />,
   profile: <UserIcon />,
+  requests: <InboxIcon />,
   appearance: <PaletteIcon />,
+  platform: <GlobeIcon />,
   components: <GridIcon />,
 };
 
-// El catálogo solo existe con `npm run dev:web`; el build lo elimina.
-const SECTIONS = visibleSections(import.meta.env.DEV);
-const GROUPS: SectionGroup[] = ['admin', 'settings'];
+const GROUPS: SectionGroup[] = ['main', 'account'];
+const ROLE_ORDER: ViewRole[] = ['ADMIN', 'TEACHER', 'STUDENT'];
 
 /* Muestra la base a la que se va a cambiar, no la actual. */
 function ThemeIcon({ theme }: { theme: Theme }) {
@@ -96,7 +106,7 @@ function NavButton({
 }: {
   section: Section;
   active: boolean;
-  onNavigate: (page: AdminPage) => void;
+  onNavigate: (page: AppPage) => void;
 }) {
   return (
     <button
@@ -114,13 +124,15 @@ function NavButton({
 function Breadcrumbs({
   page,
   institutionName,
+  role,
   onNavigate,
 }: {
-  page: AdminPage;
+  page: AppPage;
   institutionName: string;
-  onNavigate: (page: AdminPage) => void;
+  role: ViewRole;
+  onNavigate: (page: AppPage) => void;
 }) {
-  const crumbs = breadcrumbsFor(page, institutionName);
+  const crumbs = breadcrumbsFor(page, institutionName, role);
 
   return (
     <nav className="breadcrumbs" aria-label="Ruta de navegación">
@@ -147,26 +159,42 @@ function Breadcrumbs({
   );
 }
 
+/* Rol por defecto si main.tsx no indica uno: el de más permisos. */
+function defaultRole(roles: readonly string[]): ViewRole {
+  return ROLE_ORDER.find(role => roles.includes(role)) ?? 'STUDENT';
+}
+
 export function AppShell({
   activePage,
   onNavigate,
   githubLogin,
   avatarUrl,
   institutionName,
+  institutionLogoUrl,
+  institutionAccent,
   institutions = [],
   activeInstitutionId,
   onSwitchInstitution,
   roles,
+  viewRole,
+  onSwitchRole,
+  isPlatformAdmin = false,
   loggingOut,
   onLogout,
   children,
 }: AppShellProps) {
+  const role = viewRole ?? defaultRole(roles);
+  // El catálogo solo existe con `npm run dev:web`; el build lo elimina.
+  const sections = sectionsFor({ isDev: import.meta.env.DEV, role, isPlatformAdmin });
+  const switchableRoles = ROLE_ORDER.filter(item => roles.includes(item));
+  const canSwitchRole = switchableRoles.length > 1 && onSwitchRole !== undefined;
   const canSwitchInstitution =
     institutions.length > 1 && activeInstitutionId !== undefined && onSwitchInstitution !== undefined;
+
   const { theme } = useAppearance();
   const upcomingTheme = nextTheme(theme);
   const themeButtonLabel = `Cambiar a base ${THEME_ADJECTIVES[upcomingTheme]}`;
-  const roleLabel = primaryRoleLabel(roles);
+  const roleLabel = ROLE_NAME[role];
 
   const [menuOpen, setMenuOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
@@ -176,7 +204,7 @@ export function AppShell({
   // Última sección mostrada: el foco solo se mueve si la sección cambia de verdad.
   const shownPage = useRef(activePage);
 
-  function navigate(page: AdminPage) {
+  function navigate(page: AppPage) {
     setMenuOpen(false);
     onNavigate(page);
   }
@@ -237,16 +265,28 @@ export function AppShell({
   }, []);
 
   return (
-    <div className="vmat-shell" data-menu-open={menuOpen || undefined}>
+    <div
+      className="vmat-shell"
+      data-menu-open={menuOpen || undefined}
+      style={
+        institutionAccent
+          ? ({ '--vmat-institution-accent': institutionAccent } as CSSProperties)
+          : undefined
+      }
+    >
       <a className="skip-link" href="#contenido-principal">
         Saltar al contenido
       </a>
 
       <aside id="menu-principal" className="vmat-sidebar" aria-label="Menú principal">
         <div className="vmat-brand">
-          <div className="vmat-logo" aria-hidden="true">
-            W
-          </div>
+          {institutionLogoUrl ? (
+            <img className="vmat-logo institution-logo" src={institutionLogoUrl} alt="" />
+          ) : (
+            <div className="vmat-logo" aria-hidden="true">
+              W
+            </div>
+          )}
           <div className="vmat-brand-text">
             <strong>WebClass</strong>
             <span>Classroom</span>
@@ -262,15 +302,35 @@ export function AppShell({
           </button>
         </div>
 
-        <SectionSearch ref={searchRef} sections={SECTIONS} onNavigate={navigate} />
+        {canSwitchRole && (
+          <div className="role-switch" role="group" aria-label="Ver como">
+            {switchableRoles.map(item => (
+              <button
+                key={item}
+                type="button"
+                className={item === role ? 'active' : ''}
+                aria-pressed={item === role}
+                onClick={() => {
+                  setMenuOpen(false);
+                  onSwitchRole(item);
+                }}
+              >
+                {ROLE_NAME[item]}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <SectionSearch ref={searchRef} sections={sections} role={role} onNavigate={navigate} />
 
         <nav className="vmat-nav" aria-label="Secciones">
           {GROUPS.map(group => {
-            const items = SECTIONS.filter(section => section.group === group);
+            const items = sections.filter(section => section.group === group);
+            if (items.length === 0) return null;
             return (
               <div key={group} className="vmat-nav-section">
                 <h2 className="vmat-nav-group" id={`grupo-${group}`}>
-                  {GROUP_LABELS[group]}
+                  {groupLabel(group, role)}
                 </h2>
                 <ul aria-labelledby={`grupo-${group}`}>
                   {items.map(section => (
@@ -335,7 +395,7 @@ export function AppShell({
             <MenuIcon />
           </button>
 
-          <Breadcrumbs page={activePage} institutionName={institutionName} onNavigate={navigate} />
+          <Breadcrumbs page={activePage} institutionName={institutionName} role={role} onNavigate={navigate} />
 
           <div className="topbar-actions">
             <button

@@ -1,175 +1,263 @@
-import { ExternalLinkIcon, LogoutIcon } from '../components/icons';
-import { Badge, Button, Card, StatusBadge } from '../components/ui';
-import { showWelcomeAgain, useWelcomeDismissed } from '../onboarding/welcome-store';
-import { primaryRoleLabel } from '../navigation/sections';
-import type { CurrentUser } from '../session/session-state';
-import { ACCENT_LABELS, THEME_ADJECTIVES } from '../theme/appearance';
-import { useAppearance } from '../theme/appearance-store';
+import { useEffect, useState, type FormEvent } from 'react';
 
-/*
- * Mi perfil: solo lectura. Muestra lo que /me ya devuelve. Editar datos
- * académicos o roles no es algo que la persona haga sola: lo decide la
- * administración de la institución, así que aquí no hay botones de editar.
- */
+import { api, errorMessage } from '../lib/api';
 
-const ROLE_NAMES: Record<string, string> = {
+type Profile = {
+  displayName: string | null;
+  contactEmail: string | null;
+  notifyDeadlines: boolean;
+  notifyFeedback: boolean;
+};
+
+type Membership = {
+  id: string;
+  name: string;
+  roles: string[];
+};
+
+const ROLE_LABEL: Record<string, string> = {
   ADMIN: 'Administrador',
   TEACHER: 'Profesor',
   STUDENT: 'Estudiante',
 };
 
-const IDENTITY_LABELS: Record<string, string> = {
-  VERIFIED: 'Verificada',
-  PENDING: 'En revisión',
-  REJECTED: 'Rechazada',
+type ProfilePageProps = {
+  githubLogin: string;
+  avatarUrl: string | null;
+  institutions: Membership[];
+  onOpenRequests: () => void;
 };
 
 export function ProfilePage({
-  user,
-  activeInstitutionId,
-  onOpenAppearance,
-  onLogout,
-  loggingOut,
-}: {
-  user: CurrentUser;
-  activeInstitutionId: string;
-  onOpenAppearance: () => void;
-  onLogout: () => void;
-  loggingOut: boolean;
-}) {
-  const appearance = useAppearance();
-  const welcomeDismissed = useWelcomeDismissed();
-  const login = user.github.login;
-  const displayName = user.academicIdentity?.displayName?.trim();
+  githubLogin,
+  avatarUrl,
+  institutions,
+  onOpenRequests,
+}: ProfilePageProps) {
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<
+    { kind: 'ok' | 'error'; text: string } | null
+  >(null);
+
+  useEffect(() => {
+    api<{ profile: Profile }>('/me/profile')
+      .then(body => setProfile(body.profile))
+      .catch(() => setLoadFailed(true));
+  }, []);
+
+  async function save(event: FormEvent) {
+    event.preventDefault();
+    if (!profile) return;
+
+    setSaving(true);
+    setMessage(null);
+
+    try {
+      await api('/me/profile', { method: 'PATCH', body: profile });
+      setMessage({ kind: 'ok', text: 'Perfil guardado.' });
+    } catch (error) {
+      setMessage({
+        kind: 'error',
+        text: errorMessage(error, 'No pudimos guardar el perfil.'),
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <div className="admin-page">
       <section className="page-heading">
         <div>
-          <p className="page-kicker">Ajustes</p>
-          <h1>Mi perfil</h1>
-          <p>Tu cuenta, tus instituciones y tus preferencias en este navegador.</p>
+          <p className="page-kicker">MI CUENTA</p>
+          <h1>Perfil</h1>
+          <p>
+            Tus datos, preferencias y la institución a la que
+            perteneces.
+          </p>
         </div>
       </section>
 
-      <Card kicker="Cuenta" title="GitHub">
+      <section className="admin-panel">
+        <div className="admin-panel-heading">
+          <div>
+            <p className="page-kicker">IDENTIDAD</p>
+            <h2>Cuenta de GitHub</h2>
+          </div>
+        </div>
+
         <div className="profile-identity">
-          {user.github.avatarUrl ? (
-            <img src={user.github.avatarUrl} alt="" className="profile-identity-avatar" />
+          {avatarUrl ? (
+            <img src={avatarUrl} alt="" />
           ) : (
-            <span className="profile-identity-avatar" aria-hidden="true">
-              {login.charAt(0).toUpperCase()}
-            </span>
+            <div className="request-avatar">
+              {githubLogin.charAt(0).toUpperCase()}
+            </div>
           )}
-          <div className="profile-identity-copy">
-            {displayName && <strong>{displayName}</strong>}
-            <span className={displayName ? undefined : 'is-primary'}>@{login}</span>
-            <span className="profile-identity-note">
-              Tu foto y tu usuario vienen de GitHub; se cambian allá.
+          <div>
+            <strong>@{githubLogin}</strong>
+            <span className="muted">
+              Iniciaste sesión con GitHub. WebClass solo usa tu
+              identidad pública (usuario y avatar); no crea ni
+              modifica repositorios sin tu permiso.
             </span>
           </div>
-          <a
-            className="profile-external-link"
-            href={`https://github.com/${encodeURIComponent(login)}`}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Ver en GitHub
-            <ExternalLinkIcon />
-            <span className="visually-hidden"> (se abre en otra pestaña)</span>
-          </a>
         </div>
-      </Card>
+      </section>
 
-      <Card
-        kicker="Instituciones"
-        title={user.institutions.length === 1 ? 'Tu institución' : `Tus ${user.institutions.length} instituciones`}
-      >
-        <ul className="profile-institutions">
-          {user.institutions.map(institution => (
-            <li key={institution.id}>
-              <div className="profile-institution-head">
-                <strong>{institution.name}</strong>
-                {institution.id === activeInstitutionId && user.institutions.length > 1 && (
-                  <Badge tone="accent">Activa</Badge>
-                )}
+      <section className="admin-panel">
+        <div className="admin-panel-heading">
+          <div>
+            <p className="page-kicker">MEMBRESÍAS</p>
+            <h2>Instituciones</h2>
+          </div>
+          <button
+            type="button"
+            className="secondary-action"
+            onClick={onOpenRequests}
+          >
+            Mis solicitudes
+          </button>
+        </div>
+
+        {institutions.length === 0 ? (
+          <p className="field-hint">
+            Todavía no perteneces a ninguna institución.
+          </p>
+        ) : (
+          <ul className="plain-list">
+            {institutions.map(item => (
+              <li key={item.id}>
+                <strong>{item.name}</strong>
+                <span className="pill-row">
+                  {item.roles.map(role => (
+                    <span key={role} className="status-pill active">
+                      {ROLE_LABEL[role] ?? role}
+                    </span>
+                  ))}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="admin-panel">
+        <div className="admin-panel-heading">
+          <div>
+            <p className="page-kicker">DATOS Y PREFERENCIAS</p>
+            <h2>Información personal</h2>
+          </div>
+        </div>
+
+        {loadFailed && (
+          <p className="form-error" role="alert">
+            No pudimos cargar tu perfil.
+          </p>
+        )}
+
+        {!profile && !loadFailed && (
+          <div className="admin-loading">
+            <div className="loader" />
+            <span>Cargando perfil…</span>
+          </div>
+        )}
+
+        {profile && (
+          <form className="stack-form" onSubmit={save}>
+            <div className="form-grid">
+              <div className="form-field">
+                <label htmlFor="profile-name">Nombre para mostrar</label>
+                <input
+                  id="profile-name"
+                  maxLength={120}
+                  autoComplete="name"
+                  value={profile.displayName ?? ''}
+                  onChange={event =>
+                    setProfile({
+                      ...profile,
+                      displayName: event.target.value,
+                    })
+                  }
+                />
               </div>
 
-              <dl className="profile-facts">
-                <div>
-                  <dt>Rol</dt>
-                  <dd className="profile-roles">
-                    {institution.roles.length > 0
-                      ? institution.roles.map(role => (
-                          <Badge key={role} tone="neutral" dot>
-                            {ROLE_NAMES[role] ?? role}
-                          </Badge>
-                        ))
-                      : primaryRoleLabel(institution.roles)}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Identidad académica</dt>
-                  <dd>
-                    {institution.academicIdentity ? (
-                      <span className="profile-identity-row">
-                        <code>{institution.academicIdentity.institutionalIdentifier}</code>
-                        <StatusBadge
-                          status={institution.academicIdentity.status}
-                          label={IDENTITY_LABELS[institution.academicIdentity.status]}
-                        />
-                      </span>
-                    ) : (
-                      <span className="profile-muted">Sin registrar</span>
-                    )}
-                  </dd>
-                </div>
-              </dl>
-            </li>
-          ))}
-        </ul>
-        <p className="profile-muted">
-          Para corregir tu rol o tu código, habla con la administración de la institución.
-        </p>
-      </Card>
+              <div className="form-field">
+                <label htmlFor="profile-email">
+                  Correo de contacto (privado)
+                </label>
+                <input
+                  id="profile-email"
+                  type="email"
+                  maxLength={254}
+                  autoComplete="email"
+                  value={profile.contactEmail ?? ''}
+                  onChange={event =>
+                    setProfile({
+                      ...profile,
+                      contactEmail: event.target.value,
+                    })
+                  }
+                />
+                <span className="field-hint">
+                  No se muestra a otros usuarios.
+                </span>
+              </div>
+            </div>
 
-      <Card kicker="Preferencias" title="En este navegador">
-        <dl className="profile-facts">
-          <div>
-            <dt>Apariencia</dt>
-            <dd>
-              Base {THEME_ADJECTIVES[appearance.theme]} con secundario{' '}
-              {ACCENT_LABELS[appearance.accent].toLowerCase()}
-            </dd>
-          </div>
-        </dl>
-        <div className="profile-actions">
-          <Button variant="secondary" size="sm" onClick={onOpenAppearance}>
-            Cambiar apariencia
-          </Button>
-          <Button variant="ghost" size="sm" onClick={showWelcomeAgain} disabled={!welcomeDismissed}>
-            {welcomeDismissed ? 'Mostrar la bienvenida otra vez' : 'La bienvenida está visible en Inicio'}
-          </Button>
-        </div>
-      </Card>
+            <fieldset className="check-group">
+              <legend>Avisos en el inicio</legend>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={profile.notifyDeadlines}
+                  onChange={event =>
+                    setProfile({
+                      ...profile,
+                      notifyDeadlines: event.target.checked,
+                    })
+                  }
+                />
+                Próximos vencimientos y entregas atrasadas
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={profile.notifyFeedback}
+                  onChange={event =>
+                    setProfile({
+                      ...profile,
+                      notifyFeedback: event.target.checked,
+                    })
+                  }
+                />
+                Retroalimentación y calificaciones nuevas
+              </label>
+            </fieldset>
 
-      <Card kicker="Sesión" title="Cerrar sesión">
-        <p className="profile-muted">
-          Cierra la sesión en este navegador. Para volver a entrar necesitas tu cuenta de GitHub.
-        </p>
-        <div className="profile-actions">
-          <Button
-            variant="danger-soft"
-            size="sm"
-            iconStart={<LogoutIcon />}
-            onClick={onLogout}
-            loading={loggingOut}
-            loadingText="Cerrando sesión…"
-          >
-            Cerrar sesión
-          </Button>
-        </div>
-      </Card>
+            {message && (
+              <p
+                className={message.kind === 'ok' ? 'form-success' : 'form-error'}
+                role="status"
+              >
+                {message.text}
+              </p>
+            )}
+
+            <div className="form-actions">
+              <button
+                type="submit"
+                className="primary-action"
+                disabled={saving}
+              >
+                {saving ? 'Guardando…' : 'Guardar'}
+              </button>
+            </div>
+          </form>
+        )}
+      </section>
     </div>
   );
 }

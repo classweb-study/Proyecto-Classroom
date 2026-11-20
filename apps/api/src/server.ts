@@ -1,20 +1,18 @@
 import { Pool } from 'pg';
+import type {
+  IncomingMessage,
+  ServerResponse,
+} from 'node:http';
 
 import {
+  createAcademicRepository,
   createAdminRepository,
-} from '../../../packages/database/src/admin.js';
-import {
   createAuthRepository,
-} from '../../../packages/database/src/auth.js';
-import {
   createInstitutionAccessRepository,
-} from '../../../packages/database/src/access.js';
-import {
-  createGitHubAuth,
-} from '../../../packages/github/src/auth.js';
-import {
-  databaseUrl,
-} from '../../../packages/shared/src/index.js';
+  createPlatformRepository,
+} from '@classroom/database';
+import { createGitHubAuth } from '@classroom/github';
+import { databaseUrl } from '@classroom/shared';
 
 import { createApp } from './app.js';
 
@@ -86,6 +84,8 @@ if (missingEnvironment.length > 0) {
   const auth = createAuthRepository(pool);
   const access = createInstitutionAccessRepository(pool);
   const admin = createAdminRepository(pool);
+  const academic = createAcademicRepository(pool);
+  const platform = createPlatformRepository(pool);
 
   const githubAuth = createGitHubAuth({
     clientId: requiredEnvironment('AUTH_GITHUB_CLIENT_ID'),
@@ -97,12 +97,17 @@ if (missingEnvironment.length > 0) {
     auth,
     access,
     admin,
+    academic,
+    platform,
+    platformAdminGithubIds: (process.env.PLATFORM_ADMIN_GITHUB_IDS ?? '')
+      .split(',')
+      .map(id => id.trim())
+      .filter(Boolean),
     githubAuth,
     frontendOrigin: requiredEnvironment('FRONTEND_ORIGIN'),
     secureCookies:
       process.env.VERCEL_ENV === 'production' ||
       process.env.NODE_ENV === 'production',
-    defaultInstitutionSlug: 'unisabana',
     checkReadiness: async () => {
       await pool.query('SELECT 1');
       return true;
@@ -110,7 +115,17 @@ if (missingEnvironment.length > 0) {
   });
 }
 
-await app.listen({
-  port: Number(process.env.PORT ?? 3000),
-  host: '0.0.0.0',
-});
+/*
+ * Vercel Functions own the HTTP listener. Starting Fastify with `listen()`
+ * inside a Function leaves its request lifecycle detached from Vercel's
+ * invocation and can cause requests to hang. Prepare Fastify once, then
+ * delegate each Vercel request to its underlying Node server.
+ */
+await app.ready();
+
+export default function handler(
+  request: IncomingMessage,
+  response: ServerResponse,
+): void {
+  app.server.emit('request', request, response);
+}

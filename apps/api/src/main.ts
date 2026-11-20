@@ -1,6 +1,8 @@
 import {
   createDatabase,
+  createAcademicRepository,
   createAdminRepository,
+  createPlatformRepository,
   createAuthRepository,
   createInstitutionAccessRepository,
 } from '@classroom/database';
@@ -44,6 +46,8 @@ try {
   const auth = createAuthRepository(database.pool);
   const access = createInstitutionAccessRepository(database.pool);
   const admin = createAdminRepository(database.pool);
+  const academic = createAcademicRepository(database.pool);
+  const platform = createPlatformRepository(database.pool);
 
   const githubAuth = createGitHubAuth({
     clientId: requiredEnvironment('AUTH_GITHUB_CLIENT_ID'),
@@ -60,10 +64,15 @@ try {
     auth,
     access,
     admin,
+    academic,
+    platform,
+    platformAdminGithubIds: (process.env.PLATFORM_ADMIN_GITHUB_IDS ?? '')
+      .split(',')
+      .map(id => id.trim())
+      .filter(Boolean),
     githubAuth,
     frontendOrigin,
     secureCookies,
-    defaultInstitutionSlug: 'unisabana',
     checkReadiness: async () => {
       await database?.pool.query('SELECT 1');
       return true;

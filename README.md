@@ -47,9 +47,17 @@ Registre en GitHub OAuth exactamente `AUTH_GITHUB_CALLBACK_URL`; en producción 
 
 Después de cada Preview y de producción, compruebe desde el dominio publicado `GET /health/live` (proceso) y `GET /health/ready` (PostgreSQL). El primero debe responder 200 aun si Neon cae; el segundo debe responder 503 sin revelar detalles cuando falta configuración o la base no responde. `GET /me` sin cookie debe responder 401 controlado, nunca 500. Complete el smoke test OAuth, persistencia y logout únicamente con una cuenta de prueba autorizada. Si falla, use el rollback instantáneo de Vercel al deployment sano anterior; las migraciones se aplican de manera separada con respaldo confirmado, nunca desde una prueba de salud.
 
+### Diagnóstico de deployments protegidos
+
+Los Preview Deployments de Vercel pueden estar protegidos por Vercel Authentication. Un `302` con destino a `vercel.com/sso-api` significa que la protección interceptó la solicitud **antes** de que Fastify se ejecute; no es un error de la API y no generará logs de runtime. Valide esos previews con `vercel curl <url>/health/live` desde una sesión autorizada o desde el navegador de un integrante autorizado. Para probar con `curl` en una máquina con proxy configurado, use `curl --noproxy "*" -i <url>/health/live` para evitar diagnosticar erróneamente el proxy local como un fallo del deployment.
+
+Antes de promover un Preview, verifique en Vercel que el artefacto incluya `services/api/index`, confirme `200` en `/health/live`, confirme el resultado esperado de `/health/ready` y revise Runtime Logs. Los timeouts en el dominio de producción deben investigarse sobre el deployment de `main`; no se deben atribuir a un Preview protegido ni promover una rama hasta contar con una respuesta reproducible.
+
 ## PostgreSQL local
 
-Copie `.env.example` a `.env`; elija `POSTGRES_PASSWORD` y construya `DATABASE_URL` con usuario/database `classroom`, host `127.0.0.1`, puerto `5432` y contraseña codificada para URL. No comparta ese archivo. Compose lee `.env`; los procesos Node cargan `.env` si existe; las variables de su shell tienen prioridad.
+Neon CLI escribe las variables de su branch en `.env.local`; los scripts de API, worker y base de datos las cargan automáticamente. La aplicación mantiene `pg` y Drizzle, que son apropiados para este backend Fastify de Node con una conexión `DATABASE_URL` pooled. Para migraciones, use temporalmente una URL directa (`DATABASE_URL_UNPOOLED`) en un branch de prueba y después aplique el cambio de forma controlada a producción.
+
+Para PostgreSQL local, copie `.env.example` a `.env`; elija `POSTGRES_PASSWORD` y construya `DATABASE_URL` con usuario/database `classroom`, host `127.0.0.1`, puerto `5432` y contraseña codificada para URL. No comparta ese archivo. Compose lee `.env`; para ejecutar contra esta configuración local exporte `DATABASE_URL` en la shell. Los scripts de Node cargan `.env.local` para la conexión administrada por Neon y las variables de la shell tienen prioridad.
 
 ```sh
 docker compose up -d postgres

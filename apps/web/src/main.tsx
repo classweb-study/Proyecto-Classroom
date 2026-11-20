@@ -11,76 +11,39 @@ import { createRoot } from 'react-dom/client';
 
 import {
   AppShell,
-  type AdminPage,
+  type AppPage,
+  type ViewRole,
 } from './components/AppShell';
-import { GitHubIcon, InstitutionIcon } from './components/icons';
-import { Alert, Card, EmptyState, Spinner, ToastProvider, useToast } from './components/ui';
-import { readAuthError, withoutAuthError } from './session/auth-errors';
+import { GitHubIcon } from './components/icons';
+import { Alert, Spinner, ToastProvider, useToast } from './components/ui';
+import { canOpen } from './navigation/sections';
+import { WelcomePanel } from './onboarding/WelcomePanel';
+import { AdminHomePage } from './pages/AdminHomePage';
+import { AdminUsersPage } from './pages/AdminUsersPage';
+import { AdminMembersPage } from './pages/AdminMembersPage';
+import { AccessRequestsPage } from './pages/AccessRequestsPage';
+import { AdminInstitutionPage } from './pages/AdminInstitutionPage';
+import { AppearancePage } from './pages/AppearancePage';
+import { CoursesSection } from './pages/CoursesPage';
+import { StudentHomePage, TeacherHomePage } from './pages/HomeDashboards';
+import { PlatformPage } from './pages/PlatformPage';
+import { ProfilePage } from './pages/ProfilePage';
 import {
-  DeniedAccessScreen,
   LoadingScreen,
-  NoInstitutionScreen,
-  PendingAccessScreen,
-  RoleUnavailableScreen,
   ServerErrorScreen,
   SessionExpiredScreen,
 } from './pages/status/StatusScreens';
+import { readAuthError, withoutAuthError } from './session/auth-errors';
 import { onSessionExpired } from './session/session-events';
-import {
-  accessViewFor,
-  classifyMeResponse,
-  isExpiredSession,
-  type CurrentUser,
-} from './session/session-state';
-import { WelcomePanel } from './onboarding/WelcomePanel';
-import { AdminHomePage } from './pages/AdminHomePage';
+import { classifyMeResponse, isExpiredSession } from './session/session-state';
 import { initAppearance } from './theme/appearance-store';
+import type { Navigate } from './lib/api';
 
 import './styles/tokens.css';
 import './style.css';
 import './styles/components.css';
 // Va al final: traduce los nombres viejos (--vmat-*) a los tokens.
 import './styles/compat.css';
-
-/*
- * Inicio va en el archivo principal porque es lo primero que se ve al
- * entrar: diferirlo hacía esperar una segunda descarga (medido: 1,1 s →
- * 1,6 s con 3G). Las demás páginas se descargan al abrirlas y, después de
- * entrar, se precargan en segundo plano (prefetchPages) para que navegar
- * siga siendo instantáneo.
- */
-const loadAdminUsers = () => import('./pages/AdminUsersPage');
-const loadAdminMembers = () => import('./pages/AdminMembersPage');
-const loadAppearance = () => import('./pages/AppearancePage');
-const loadProfile = () => import('./pages/ProfilePage');
-
-const AdminUsersPage = lazy(() => loadAdminUsers().then(module => ({ default: module.AdminUsersPage })));
-const AdminMembersPage = lazy(() => loadAdminMembers().then(module => ({ default: module.AdminMembersPage })));
-const AppearancePage = lazy(() => loadAppearance().then(module => ({ default: module.AppearancePage })));
-const ProfilePage = lazy(() => loadProfile().then(module => ({ default: module.ProfilePage })));
-
-function prefetchPages() {
-  const run = () => {
-    for (const load of [loadAdminUsers, loadAdminMembers, loadAppearance, loadProfile]) {
-      void load().catch(() => {
-        // Si falla la precarga, la página se descarga al abrirla.
-      });
-    }
-  };
-  if (typeof window.requestIdleCallback === 'function') {
-    window.requestIdleCallback(run, { timeout: 3000 });
-  } else {
-    setTimeout(run, 1500);
-  }
-}
-
-function PageFallback() {
-  return (
-    <div className="page-fallback">
-      <Spinner size="lg" label="Cargando…" />
-    </div>
-  );
-}
 
 // Solo en desarrollo: en el build de producción esta rama desaparece.
 const ComponentCatalogPage = import.meta.env.DEV
@@ -91,6 +54,56 @@ const ComponentCatalogPage = import.meta.env.DEV
     )
   : null;
 
+const ACTIVE_INSTITUTION_KEY = 'vmat-active-institution';
+const VIEW_ROLE_KEY = 'vmat-view-role';
+
+function readStored(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function store(key: string, value: string) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Remembering the choice is a convenience; switching still works without it.
+  }
+}
+
+type InstitutionRole = 'ADMIN' | 'TEACHER' | 'STUDENT';
+type AcademicIdentityStatus =
+  | 'PENDING'
+  | 'VERIFIED'
+  | 'REJECTED';
+
+type CurrentUser = {
+  id: string;
+  github: {
+    id: string;
+    login: string;
+    avatarUrl: string | null;
+  };
+  academicIdentity: null | {
+    displayName?: string;
+  };
+  isPlatformAdmin?: boolean;
+  institutions: Array<{
+    id: string;
+    name: string;
+    slug: string;
+    roles: InstitutionRole[];
+    logoUrl?: string | null;
+    accentColor?: string | null;
+    academicIdentity: null | {
+      institutionalIdentifier: string;
+      status: AcademicIdentityStatus;
+    };
+  }>;
+};
+
 type AuthState =
   | { status: 'loading' }
   | { status: 'anonymous' }
@@ -98,52 +111,16 @@ type AuthState =
   | { status: 'expired' }
   | { status: 'error'; kind: 'server' | 'network'; code: number | null };
 
+type View = {
+  page: AppPage;
+  courseId?: string;
+  activityId?: string;
+};
+
+const ROLE_PRIORITY: ViewRole[] = ['ADMIN', 'TEACHER', 'STUDENT'];
+
 /* Cada cuánto, como mínimo, se revisa la sesión al volver a la pestaña. */
 const SESSION_RECHECK_MS = 60_000;
-
-/*
- * Sección que todavía no tiene funciones. Dice qué va a haber ahí sin
- * mostrar botones de cosas que no existen.
- */
-function UpcomingSectionPage({
-  title,
-  description,
-  upcoming,
-}: {
-  title: string;
-  description: string;
-  upcoming: string;
-}) {
-  return (
-    <div className="admin-page">
-      <section className="page-heading">
-        <div>
-          <p className="page-kicker">Administración</p>
-          <h1>{title}</h1>
-          <p>{description}</p>
-        </div>
-      </section>
-
-      <Card>
-        <EmptyState icon={<InstitutionIcon />} title="Esta sección todavía no está disponible" size="lg">
-          {upcoming}
-        </EmptyState>
-      </Card>
-    </div>
-  );
-}
-
-let prefetched = false;
-
-/* Precarga las páginas la primera vez que se muestra la aplicación. */
-function PrefetchOnce() {
-  useEffect(() => {
-    if (prefetched) return;
-    prefetched = true;
-    prefetchPages();
-  }, []);
-  return null;
-}
 
 function LoginScreen() {
   const [authError] = useState(() => readAuthError(window.location.search));
@@ -208,11 +185,39 @@ function App() {
   const [auth, setAuth] = useState<AuthState>({ status: 'loading' });
   const [checking, setChecking] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
-  const [activePage, setActivePage] = useState<AdminPage>('home');
+  const [view, setView] = useState<View>({ page: 'home' });
+  const [activeInstitutionId, setActiveInstitutionId] =
+    useState<string | null>(() => readStored(ACTIVE_INSTITUTION_KEY));
+  const [preferredRole, setPreferredRole] = useState<string | null>(() =>
+    readStored(VIEW_ROLE_KEY),
+  );
+  const [platformOnly, setPlatformOnly] = useState(false);
 
   const authRef = useRef(auth);
   authRef.current = auth;
   const lastCheck = useRef(0);
+
+  function switchInstitution(institutionId: string) {
+    // Switching never carries course or request ids across institutions.
+    setActiveInstitutionId(institutionId);
+    store(ACTIVE_INSTITUTION_KEY, institutionId);
+    setView({ page: 'home' });
+  }
+
+  function switchRole(role: ViewRole) {
+    setPreferredRole(role);
+    store(VIEW_ROLE_KEY, role);
+    setView({ page: 'home' });
+  }
+
+  const navigate: Navigate = target => {
+    setView({
+      page: target.page as AppPage,
+      courseId: target.courseId,
+      activityId: target.activityId,
+    });
+    window.scrollTo({ top: 0 });
+  };
 
   /*
    * Pide /me y decide el estado. `background` = revisión silenciosa
@@ -262,7 +267,7 @@ function App() {
   }, [loadSession]);
 
   // Al volver a la pestaña se revisa la sesión: así se detecta si venció
-  // y una solicitud pendiente que ya fue aprobada aparece sola.
+  // y una solicitud que ya fue aprobada aparece sola.
   useEffect(() => {
     function recheck() {
       if (document.visibilityState !== 'visible') return;
@@ -307,7 +312,7 @@ function App() {
         throw new Error('Logout failed');
       }
 
-      setActivePage('home');
+      setView({ page: 'home' });
       setAuth({ status: 'anonymous' });
     } catch {
       // La sesión sigue abierta: se avisa y la persona sigue donde estaba.
@@ -337,46 +342,107 @@ function App() {
   }
 
   const { user } = auth;
-  const view = accessViewFor(user);
-  const login = user.github.login;
+  const isPlatformAdmin = user.isPlatformAdmin === true;
+  const institution =
+    user.institutions.find(
+      item => item.id === activeInstitutionId,
+    ) ?? user.institutions[0];
 
-  switch (view.kind) {
-    case 'pending':
+  // Without an approved institution the only things available are the
+  // request flow and, for platform admins, institution registration.
+  if (!institution) {
+    if (platformOnly && isPlatformAdmin) {
       return (
-        <PendingAccessScreen
-          request={view.request}
-          login={login}
-          checking={checking}
-          onCheckAgain={checkAgain}
-          onLogout={logout}
-          loggingOut={loggingOut}
-        />
+        <main className="access-requests-page">
+          <button
+            type="button"
+            className="link-button back-link"
+            onClick={() => setPlatformOnly(false)}
+          >
+            ← Mis solicitudes
+          </button>
+          <PlatformPage onChanged={() => void loadSession()} />
+        </main>
       );
-    case 'denied':
-      return (
-        <DeniedAccessScreen request={view.request} login={login} onLogout={logout} loggingOut={loggingOut} />
-      );
-    case 'no-institution':
-      return <NoInstitutionScreen login={login} onLogout={logout} loggingOut={loggingOut} />;
-    case 'role-unavailable':
-      return (
-        <RoleUnavailableScreen
-          institution={view.institution}
-          login={login}
-          onLogout={logout}
-          loggingOut={loggingOut}
-        />
-      );
-    case 'app':
-      break;
+    }
+
+    return (
+      <AccessRequestsPage
+        githubLogin={user.github.login}
+        loggingOut={loggingOut}
+        onLogout={logout}
+        onOpenPlatform={
+          isPlatformAdmin ? () => setPlatformOnly(true) : undefined
+        }
+      />
+    );
   }
 
-  const { institution } = view;
+  const viewRole: ViewRole =
+    ROLE_PRIORITY.find(
+      role =>
+        role === preferredRole && institution.roles.includes(role),
+    ) ??
+    ROLE_PRIORITY.find(role => institution.roles.includes(role)) ??
+    'STUDENT';
 
-  // (Se precarga una sola vez por sesión; ver PrefetchOnce.)
+  // A page from another role (e.g. after switching) falls back to home.
+  const page: AppPage = canOpen(view.page, viewRole, isPlatformAdmin, import.meta.env.DEV)
+    ? view.page
+    : 'home';
 
-  function renderAdminPage() {
-    switch (activePage) {
+  const firstName = user.academicIdentity?.displayName?.split(' ')[0] || user.github.login;
+
+  function renderPage() {
+    switch (page) {
+      case 'profile':
+        return (
+          <ProfilePage
+            githubLogin={user.github.login}
+            avatarUrl={user.github.avatarUrl}
+            institutions={user.institutions}
+            onOpenRequests={() => navigate({ page: 'requests' })}
+          />
+        );
+
+      case 'requests':
+        return (
+          <AccessRequestsPage
+            embedded
+            githubLogin={user.github.login}
+            loggingOut={loggingOut}
+            onLogout={logout}
+          />
+        );
+
+      case 'appearance':
+        return <AppearancePage />;
+
+      case 'platform':
+        return <PlatformPage onChanged={() => void loadSession()} />;
+
+      case 'components':
+        if (ComponentCatalogPage) {
+          return (
+            <Suspense fallback={<Spinner size="lg" label="Cargando catálogo…" />}>
+              <ComponentCatalogPage />
+            </Suspense>
+          );
+        }
+        return null;
+
+      case 'courses':
+        return (
+          <CoursesSection
+            key={`${institution.id}-${viewRole}`}
+            institutionId={institution.id}
+            role={viewRole === 'TEACHER' ? 'TEACHER' : 'STUDENT'}
+            courseId={view.courseId}
+            activityId={view.activityId}
+            navigate={navigate}
+          />
+        );
+
       case 'users':
         return (
           <AdminUsersPage
@@ -391,6 +457,7 @@ function App() {
             institutionId={institution.id}
             institutionName={institution.name}
             role="TEACHER"
+            currentUserId={user.id}
           />
         );
 
@@ -400,39 +467,15 @@ function App() {
             institutionId={institution.id}
             institutionName={institution.name}
             role="STUDENT"
+            currentUserId={user.id}
           />
         );
-
-      case 'appearance':
-        return <AppearancePage />;
-
-      case 'profile':
-        return (
-          <ProfilePage
-            user={user}
-            activeInstitutionId={institution.id}
-            onOpenAppearance={() => setActivePage('appearance')}
-            onLogout={logout}
-            loggingOut={loggingOut}
-          />
-        );
-
-      case 'components':
-        if (ComponentCatalogPage) {
-          return (
-            <Suspense fallback={<Spinner size="lg" label="Cargando catálogo…" />}>
-              <ComponentCatalogPage />
-            </Suspense>
-          );
-        }
-        return null;
 
       case 'institution':
         return (
-          <UpcomingSectionPage
-            title="Institución"
-            description={`Configuración de ${institution.name}.`}
-            upcoming="Aquí vas a poder consultar y editar el nombre, la descripción y los dominios autorizados de la institución."
+          <AdminInstitutionPage
+            institutionId={institution.id}
+            onInstitutionRenamed={() => void loadSession()}
           />
         );
 
@@ -441,13 +484,28 @@ function App() {
         return (
           <>
             <WelcomePanel
-              firstName={user.academicIdentity?.displayName?.split(' ')[0] || user.github.login}
-              onOpenAppearance={() => setActivePage('appearance')}
+              firstName={firstName}
+              onOpenAppearance={() => navigate({ page: 'appearance' })}
             />
-            <AdminHomePage
-              institutionName={institution.name}
-              githubLogin={user.github.login}
-            />
+            {viewRole === 'ADMIN' ? (
+              <AdminHomePage
+                institutionId={institution.id}
+                institutionName={institution.name}
+                onOpenRequests={() => navigate({ page: 'users' })}
+              />
+            ) : viewRole === 'TEACHER' ? (
+              <TeacherHomePage
+                institutionId={institution.id}
+                institutionName={institution.name}
+                navigate={navigate}
+              />
+            ) : (
+              <StudentHomePage
+                institutionId={institution.id}
+                institutionName={institution.name}
+                navigate={navigate}
+              />
+            )}
           </>
         );
     }
@@ -455,17 +513,24 @@ function App() {
 
   return (
     <AppShell
-      activePage={activePage}
-      onNavigate={setActivePage}
+      activePage={page}
+      onNavigate={next => navigate({ page: next })}
       githubLogin={user.github.login}
       avatarUrl={user.github.avatarUrl}
       institutionName={institution.name}
+      institutionLogoUrl={institution.logoUrl}
+      institutionAccent={institution.accentColor}
+      institutions={user.institutions}
+      activeInstitutionId={institution.id}
+      onSwitchInstitution={switchInstitution}
       roles={institution.roles}
+      viewRole={viewRole}
+      onSwitchRole={switchRole}
+      isPlatformAdmin={isPlatformAdmin}
       loggingOut={loggingOut}
       onLogout={logout}
     >
-      <PrefetchOnce />
-      <Suspense fallback={<PageFallback />}>{renderAdminPage()}</Suspense>
+      {renderPage()}
     </AppShell>
   );
 }
