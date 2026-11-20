@@ -4,6 +4,7 @@ type AdminHomePageProps = {
   institutionId: string;
   institutionName: string;
   onOpenRequests: () => void;
+  onManageInstitutions?: () => void;
 };
 
 type Overview = {
@@ -87,6 +88,7 @@ export function AdminHomePage({
   institutionId,
   institutionName,
   onOpenRequests,
+  onManageInstitutions,
 }: AdminHomePageProps) {
   const [state, setState] = useState<LoadState>({
     status: 'loading',
@@ -151,6 +153,16 @@ export function AdminHomePage({
           Administrador
         </span>
       </section>
+
+      {onManageInstitutions && (
+        <section className="admin-panel">
+          <h2>Universidades</h2>
+          <p>Registra una institución y elige quién administrará sus solicitudes.</p>
+          <button type="button" className="primary-action" onClick={onManageInstitutions}>
+            Crear o administrar instituciones
+          </button>
+        </section>
+      )}
 
       {state.status === 'loading' && (
         <div className="admin-loading">

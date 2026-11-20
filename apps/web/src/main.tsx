@@ -492,6 +492,7 @@ function App() {
                 institutionId={institution.id}
                 institutionName={institution.name}
                 onOpenRequests={() => navigate({ page: 'users' })}
+                onManageInstitutions={isPlatformAdmin ? () => navigate({ page: 'platform' }) : undefined}
               />
             ) : viewRole === 'TEACHER' ? (
               <TeacherHomePage
