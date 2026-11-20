@@ -96,3 +96,60 @@ The isolated PostgreSQL/pg-boss proof is available through `npm run rr02:proof` 
 ## RR-03 sandbox proof
 
 Separate experimental scripts verify the sandbox GitHub App and persist authenticated webhook receipts. Product API/startup remains unchanged. These proofs do not create academic identities, grant organization-admin authority, provision repositories, or execute business jobs. See [local commands and manual handoff](packages/database/rr03/README.md).
+
+## Operacion de produccion
+
+**Responsable operativo:** Jero mantiene la configuracion de Neon, Vercel,
+migraciones y evidencia de despliegue. Los cambios de producto se integran por
+PR y `main` es la rama de produccion.
+
+### Entornos y secretos
+
+| Entorno | Vercel | Base de datos | Uso |
+| --- | --- | --- | --- |
+| Development | `.env.local` no versionado | branch/local de desarrollo | trabajo local |
+| Preview | deployment de la rama/PR | branch Neon aislado | validar cambios antes de produccion |
+| Production | `main` en el proyecto Vercel | branch Neon `production` | usuarios reales |
+
+La aplicacion usa `DATABASE_URL` pooled. El comando
+`npm run db:product:migrate` prefiere `DATABASE_URL_UNPOOLED`, la conexion
+directa que Neon requiere para migraciones. Las variables y secretos se
+configuran por entorno en Vercel; no se copian valores entre Preview y
+Production ni se registran en el repositorio.
+
+### Despliegue y rollback
+
+Vercel esta conectado a `classweb-study/Proyecto-Classroom` y despliega `main`
+automaticamente a produccion. Un despliegue manual con `vercel deploy --prod`
+solo es una alternativa de recuperacion o diagnostico; no sustituye el flujo
+normal por Git.
+
+Antes de migrar produccion, crear una rama Neon desde `production`, ejecutar
+alli la migracion con la URL directa y comprobar las tablas afectadas. Conservar
+una rama de respaldo o un punto de restauracion antes de promoverla. Las
+migraciones 0004--0006 son aditivas y ya se aplicaron en produccion el
+2026-11-20.
+
+Si un deployment falla, promover desde Vercel el ultimo deployment sano o
+revertir el commit mediante un nuevo PR y dejar que `main` despliegue. No se
+restaura ni reinicia la base de datos a ciegas: pausar escrituras, conservar la
+evidencia, evaluar una migracion correctiva y usar la rama/punto de restauracion
+de Neon solo con una decision explicita del responsable del proyecto.
+
+### Evidencia de lanzamiento (2026-11-20)
+
+- Commit de infraestructura y migraciones: `2330dc1`.
+- Produccion: `https://www.webclass.study`.
+- Deployment Vercel: `dpl_4kSj95SBqqzc7e4zRTWF7s4pXqYn`.
+- Neon: siete migraciones de Drizzle registradas; existen tablas de solicitudes,
+  instituciones, cursos, actividades, miembros y entregas.
+- Verificado: `npm run typecheck`, `npm run build`, `npm test` (365 pruebas),
+  `npm run test:e2e` (2 pruebas), `/health/live` 200, `/health/ready` 200 y
+  rutas sin sesion 401 controlado.
+- OAuth de GitHub usa PKCE y no solicita scopes adicionales; solo consulta la
+  identidad basica del usuario y no conserva el token del proveedor.
+
+Falta una comprobacion manual con una cuenta de prueba autorizada: iniciar
+sesion, volver al dominio, recargar, realizar una operacion permitida, comprobar
+la persistencia y cerrar sesion. Nunca usar una cuenta personal ajena ni anotar
+tokens o cookies como evidencia.
