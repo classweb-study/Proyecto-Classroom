@@ -1,4 +1,8 @@
 import { Pool } from 'pg';
+import type {
+  IncomingMessage,
+  ServerResponse,
+} from 'node:http';
 
 import {
   createAdminRepository,
@@ -102,12 +106,17 @@ if (missingEnvironment.length > 0) {
   });
 }
 
-void app.listen({
-  port: Number(process.env.PORT ?? 3000),
-  host: '0.0.0.0',
-}).catch(error => {
-  app.log.error(error);
-  process.exitCode = 1;
-});
+/*
+ * Vercel Functions own the HTTP listener. Starting Fastify with `listen()`
+ * inside a Function leaves its request lifecycle detached from Vercel's
+ * invocation and can cause requests to hang. Prepare Fastify once, then
+ * delegate each Vercel request to its underlying Node server.
+ */
+await app.ready();
 
-export default app;
+export default function handler(
+  request: IncomingMessage,
+  response: ServerResponse,
+): void {
+  app.server.emit('request', request, response);
+}
