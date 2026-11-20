@@ -7,12 +7,16 @@ import {
   normalizeText,
   pageTitle,
   primaryRoleLabel,
+  canOpen,
   searchSections,
+  sectionsFor,
   visibleSections,
 } from '../../apps/web/src/navigation/sections.js';
 
 const prod = visibleSections(false);
 const dev = visibleSections(true);
+const admin = sectionsFor({ isDev: false, role: 'ADMIN' });
+const student = sectionsFor({ isDev: false, role: 'STUDENT' });
 const ids = (list: { id: string }[]) => list.map(section => section.id);
 
 describe('secciones visibles', () => {
@@ -37,21 +41,22 @@ describe('normalizeText', () => {
 
 describe('searchSections', () => {
   it('encuentra sin tildes ni mayúsculas', () => {
-    expect(ids(searchSections('institucion', prod))).toEqual(['institution']);
-    // Usuarios va primero por nombre; Mi perfil aparece después por la palabra clave "usuario".
-    expect(ids(searchSections('USU', prod))).toEqual(['users', 'profile']);
+    expect(ids(searchSections('institucion', admin))).toEqual(['institution']);
+    // Mi perfil aparece por la palabra clave "usuario"; Solicitudes por "usuarios".
+    expect(ids(searchSections('USU', admin))).toEqual(['users', 'profile']);
   });
 
   it('busca también por palabras clave', () => {
-    expect(ids(searchSections('cuenta', prod))).toEqual(['profile']);
-    expect(ids(searchSections('tema', prod))).toEqual(['appearance']);
-    expect(ids(searchSections('solicitudes', prod))).toEqual(['users']);
-    expect(ids(searchSections('docentes', prod))).toEqual(['teachers']);
+    expect(ids(searchSections('cuenta', admin))).toEqual(['profile']);
+    expect(ids(searchSections('tema', admin))).toEqual(['appearance']);
+    expect(ids(searchSections('solicitudes', admin))).toEqual(['users', 'requests']);
+    expect(ids(searchSections('docentes', admin))).toEqual(['teachers']);
+    expect(ids(searchSections('entregas', student))).toEqual(['courses']);
   });
 
   it('pone primero lo que empieza igual, después lo que lo contiene y al final las palabras clave', () => {
-    // "es": Estudiantes empieza por "es"; Profesores lo contiene; Usuarios solo por palabra clave ("pendientes").
-    expect(ids(searchSections('es', prod)).slice(0, 2)).toEqual(['students', 'teachers']);
+    // "es": Estudiantes empieza por "es"; Solicitudes y Profesores lo contienen, en el orden del menú.
+    expect(ids(searchSections('es', admin)).slice(0, 3)).toEqual(['students', 'users', 'teachers']);
   });
 
   it('no devuelve nada para una búsqueda vacía o sin coincidencias', () => {
@@ -77,9 +82,35 @@ describe('breadcrumbsFor', () => {
     expect(breadcrumbsFor('users', 'Universidad X')).toEqual([
       { label: 'Universidad X', page: 'home' },
       { label: 'Administración' },
-      { label: 'Usuarios' },
+      { label: 'Solicitudes' },
     ]);
-    expect(breadcrumbsFor('appearance', 'Universidad X')[1]).toEqual({ label: 'Ajustes' });
+    expect(breadcrumbsFor('appearance', 'Universidad X')[1]).toEqual({ label: 'Tu cuenta' });
+    expect(breadcrumbsFor('courses', 'Universidad X', 'TEACHER')[1]).toEqual({ label: 'Docencia' });
+    expect(breadcrumbsFor('courses', 'Universidad X', 'STUDENT')[1]).toEqual({ label: 'Aula' });
+  });
+});
+
+describe('secciones por rol', () => {
+  const visible = (role: 'ADMIN' | 'TEACHER' | 'STUDENT', platform = false) =>
+    ids(sectionsFor({ isDev: false, role, isPlatformAdmin: platform }));
+
+  it('la administración solo la ve el administrador y Cursos solo profesor y estudiante', () => {
+    expect(visible('ADMIN')).toEqual(['home', 'users', 'teachers', 'students', 'institution', 'profile', 'requests', 'appearance']);
+    expect(visible('TEACHER')).toEqual(['home', 'courses', 'profile', 'requests', 'appearance']);
+    expect(visible('STUDENT')).toEqual(visible('TEACHER'));
+  });
+
+  it('Plataforma solo para quien administra la plataforma', () => {
+    expect(visible('STUDENT')).not.toContain('platform');
+    expect(visible('STUDENT', true)).toContain('platform');
+  });
+
+  it('una sección de otro rol no se puede abrir (la app vuelve a Inicio)', () => {
+    expect(canOpen('courses', 'ADMIN', false, false)).toBe(false);
+    expect(canOpen('users', 'STUDENT', false, false)).toBe(false);
+    expect(canOpen('appearance', 'STUDENT', false, false)).toBe(true);
+    expect(canOpen('components', 'ADMIN', false, false)).toBe(false);
+    expect(canOpen('components', 'ADMIN', false, true)).toBe(true);
   });
 });
 
