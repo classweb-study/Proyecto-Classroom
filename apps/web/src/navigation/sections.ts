@@ -1,57 +1,103 @@
 /*
  * Secciones de la aplicación y lógica de navegación sin DOM:
- * búsqueda de secciones, breadcrumbs y título de la pestaña.
+ * qué ve cada rol, búsqueda de secciones, breadcrumbs y título de la pestaña.
  * Se prueba en tests/unit/navigation.test.ts.
  *
  * Hoy la sección activa vive en el estado de React y no cambia la URL.
- * Cuando Jero agregue la regla de rutas en vercel.json, cada sección
- * tendrá su dirección (/usuarios, /apariencia…) a partir de `path`.
+ * Cuando haya reglas de rutas en vercel.json, cada sección tendrá su
+ * dirección (/cursos, /apariencia…) a partir de `path`.
  */
 
-export type AdminPage =
+export type ViewRole = 'ADMIN' | 'TEACHER' | 'STUDENT';
+
+export type AppPage =
   | 'home'
   | 'users'
   | 'teachers'
   | 'students'
   | 'institution'
+  | 'courses'
   | 'profile'
+  | 'requests'
   | 'appearance'
+  | 'platform'
   | 'components';
 
-export type SectionGroup = 'admin' | 'settings';
+/** Se mantiene para los imports existentes. */
+export type AdminPage = AppPage;
+
+export type SectionGroup = 'main' | 'account';
 
 export type Section = {
-  id: AdminPage;
+  id: AppPage;
   label: string;
   group: SectionGroup;
   /* Ruta prevista para cuando existan direcciones limpias. */
   path: string;
   /* Palabras extra para el buscador: "tema", "solicitudes"… */
   keywords: string[];
+  /* Roles que ven la sección. Sin valor: todos. */
+  roles?: ViewRole[];
+  platformAdminOnly?: boolean;
   devOnly?: boolean;
 };
 
-export const GROUP_LABELS: Record<SectionGroup, string> = {
-  admin: 'Administración',
-  settings: 'Ajustes',
+const MAIN_GROUP_LABEL: Record<ViewRole, string> = {
+  ADMIN: 'Administración',
+  TEACHER: 'Docencia',
+  STUDENT: 'Aula',
 };
 
-export const SECTIONS: Section[] = [
-  { id: 'home', label: 'Inicio', group: 'admin', path: '/', keywords: ['panel', 'resumen', 'dashboard'] },
-  { id: 'users', label: 'Usuarios', group: 'admin', path: '/usuarios', keywords: ['solicitudes', 'acceso', 'aprobar', 'denegar', 'pendientes'] },
-  { id: 'teachers', label: 'Profesores', group: 'admin', path: '/profesores', keywords: ['docentes', 'miembros'] },
-  { id: 'students', label: 'Estudiantes', group: 'admin', path: '/estudiantes', keywords: ['alumnos', 'miembros'] },
-  { id: 'institution', label: 'Institución', group: 'admin', path: '/institucion', keywords: ['universidad', 'dominios', 'configuración'] },
-  { id: 'profile', label: 'Mi perfil', group: 'settings', path: '/perfil', keywords: ['cuenta', 'github', 'rol', 'identidad', 'usuario', 'codigo'] },
-  { id: 'appearance', label: 'Apariencia', group: 'settings', path: '/apariencia', keywords: ['tema', 'color', 'oscuro', 'claro', 'gris', 'secundario', 'modo'] },
-  { id: 'components', label: 'Componentes (dev)', group: 'settings', path: '/componentes', keywords: ['catálogo', 'botones', 'ui'], devOnly: true },
-];
-
-export function visibleSections(isDev: boolean): Section[] {
-  return SECTIONS.filter(section => isDev || !section.devOnly);
+export function groupLabel(group: SectionGroup, role: ViewRole = 'ADMIN'): string {
+  return group === 'main' ? MAIN_GROUP_LABEL[role] : 'Tu cuenta';
 }
 
-export function findSection(id: AdminPage): Section {
+const ADMIN: ViewRole[] = ['ADMIN'];
+const CLASSROOM: ViewRole[] = ['TEACHER', 'STUDENT'];
+
+export const SECTIONS: Section[] = [
+  { id: 'home', label: 'Inicio', group: 'main', path: '/', keywords: ['panel', 'resumen', 'dashboard'] },
+  { id: 'users', label: 'Solicitudes', group: 'main', path: '/solicitudes', keywords: ['usuarios', 'acceso', 'aprobar', 'denegar', 'pendientes'], roles: ADMIN },
+  { id: 'teachers', label: 'Profesores', group: 'main', path: '/profesores', keywords: ['docentes', 'miembros'], roles: ADMIN },
+  { id: 'students', label: 'Estudiantes', group: 'main', path: '/estudiantes', keywords: ['alumnos', 'miembros'], roles: ADMIN },
+  { id: 'institution', label: 'Institución', group: 'main', path: '/institucion', keywords: ['universidad', 'dominios', 'configuración', 'logo'], roles: ADMIN },
+  { id: 'courses', label: 'Cursos', group: 'main', path: '/cursos', keywords: ['materias', 'clases', 'actividades', 'entregas', 'tareas'], roles: CLASSROOM },
+  { id: 'profile', label: 'Mi perfil', group: 'account', path: '/perfil', keywords: ['cuenta', 'github', 'rol', 'identidad', 'usuario', 'notificaciones'] },
+  { id: 'requests', label: 'Mis solicitudes', group: 'account', path: '/mis-solicitudes', keywords: ['acceso', 'unirme', 'pedir', 'mensajes'] },
+  { id: 'appearance', label: 'Apariencia', group: 'account', path: '/apariencia', keywords: ['tema', 'color', 'oscuro', 'claro', 'gris', 'secundario', 'modo'] },
+  { id: 'platform', label: 'Plataforma', group: 'account', path: '/plataforma', keywords: ['instituciones', 'registrar', 'global'], platformAdminOnly: true },
+  { id: 'components', label: 'Componentes (dev)', group: 'account', path: '/componentes', keywords: ['catálogo', 'botones', 'ui'], devOnly: true },
+];
+
+export type SectionFilter = {
+  isDev: boolean;
+  role?: ViewRole;
+  isPlatformAdmin?: boolean;
+};
+
+/*
+ * Secciones que ve una persona. Sin `role` se devuelven las de todos los
+ * roles (sirve para el buscador de pruebas y el catálogo).
+ */
+export function sectionsFor({ isDev, role, isPlatformAdmin = false }: SectionFilter): Section[] {
+  return SECTIONS.filter(
+    section =>
+      (isDev || !section.devOnly) &&
+      (isPlatformAdmin || !section.platformAdminOnly || role === undefined) &&
+      (role === undefined || !section.roles || section.roles.includes(role)),
+  );
+}
+
+export function visibleSections(isDev: boolean): Section[] {
+  return sectionsFor({ isDev });
+}
+
+/* ¿Puede este rol abrir la sección? Si no, la app vuelve a Inicio. */
+export function canOpen(page: AppPage, role: ViewRole, isPlatformAdmin: boolean, isDev: boolean): boolean {
+  return sectionsFor({ isDev, role, isPlatformAdmin }).some(section => section.id === page);
+}
+
+export function findSection(id: AppPage): Section {
   return SECTIONS.find(section => section.id === id) ?? SECTIONS[0]!;
 }
 
@@ -89,28 +135,34 @@ export function searchSections(query: string, sections: Section[]): Section[] {
   return scored.sort((a, b) => b.score - a.score).map(entry => entry.section);
 }
 
-export type Crumb = { label: string; page?: AdminPage };
+export type Crumb = { label: string; page?: AppPage };
 
 /*
  * Ruta para los breadcrumbs: Institución › Grupo › Sección.
  * En Inicio basta con Institución › Inicio. El último elemento es la
  * página actual y no lleva destino.
  */
-export function breadcrumbsFor(page: AdminPage, institutionName: string): Crumb[] {
+export function breadcrumbsFor(page: AppPage, institutionName: string, role: ViewRole = 'ADMIN'): Crumb[] {
   const section = findSection(page);
   if (section.id === 'home') {
     return [{ label: institutionName }, { label: section.label }];
   }
   return [
     { label: institutionName, page: 'home' },
-    { label: GROUP_LABELS[section.group] },
+    { label: groupLabel(section.group, role) },
     { label: section.label },
   ];
 }
 
-export function pageTitle(page: AdminPage, appName = 'WebClass'): string {
+export function pageTitle(page: AppPage, appName = 'WebClass'): string {
   return `${findSection(page).label} · ${appName}`;
 }
+
+export const ROLE_NAME: Record<ViewRole, string> = {
+  ADMIN: 'Administrador',
+  TEACHER: 'Profesor',
+  STUDENT: 'Estudiante',
+};
 
 export function primaryRoleLabel(roles: readonly string[]): string {
   if (roles.includes('ADMIN')) return 'Administrador';
