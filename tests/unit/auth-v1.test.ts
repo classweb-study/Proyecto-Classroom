@@ -127,6 +127,7 @@ function createDependencies() {
         members: [],
       }),
     ),
+    updateApplicant: vi.fn(async () => ({ status: 'OK' as const })),
     approveAccessRequest: vi.fn(
       async (): Promise<
         | {
@@ -733,6 +734,30 @@ describe('Auth v1 HTTP boundary', () => {
       expect(response.statusCode).toBe(403);
       expect(response.json()).toEqual({
         error: 'FORBIDDEN',
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('validates applicant edits and preserves leading zeros in the institutional ID', async () => {
+    const dependencies = createDependencies();
+    const app = createApp(dependencies);
+    const institutionId = '22222222-2222-4222-8222-222222222222';
+    const requestId = '33333333-3333-4333-8333-333333333333';
+    const payload = { fullName: 'Ana Ruiz', contactEmail: 'ana@example.edu', institutionalCode: '0017' };
+    const edit = (contactEmail: string) => app.inject({
+      method: 'PATCH',
+      url: `/admin/institutions/${institutionId}/access-requests/${requestId}/applicant`,
+      headers: { origin: 'https://vmat.example', cookie: `${SESSION_COOKIE}=${token('s')}` },
+      payload: { ...payload, contactEmail },
+    });
+    try {
+      expect((await edit('invalid')).statusCode).toBe(400);
+      expect(dependencies.admin.updateApplicant).not.toHaveBeenCalled();
+      expect((await edit(payload.contactEmail)).statusCode).toBe(200);
+      expect(dependencies.admin.updateApplicant).toHaveBeenCalledWith({
+        ...payload, institutionId, requestId, actorUserId: '11111111-1111-4111-8111-111111111111',
       });
     } finally {
       await app.close();

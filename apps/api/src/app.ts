@@ -965,6 +965,26 @@ export function createApp(dependencies?: AppDependencies) {
     },
   );
 
+  app.patch<{
+    Params: { institutionId: string; requestId: string };
+    Body: { fullName?: unknown; contactEmail?: unknown; institutionalCode?: unknown };
+  }>('/admin/institutions/:institutionId/access-requests/:requestId/applicant', async (request, reply) => {
+    const actor = await adminRouteActor(request, reply, ['institutionId', 'requestId']);
+    if (!actor) return reply;
+
+    const fullName = boundedText(request.body?.fullName, 2, 120);
+    const contactEmail = validEmail(request.body?.contactEmail);
+    const institutionalCode = boundedText(request.body?.institutionalCode, 1, 40);
+    if (!fullName || !contactEmail || !institutionalCode) {
+      return reply.code(400).send({ error: 'INVALID_APPLICANT' });
+    }
+
+    const result = await admin.updateApplicant({
+      actorUserId: actor.userId, ...request.params, fullName, contactEmail, institutionalCode,
+    });
+    return sendAdminResult(reply, result, () => ({ saved: true }));
+  });
+
   app.get<{ Params: { institutionId: string } }>(
     '/admin/institutions/:institutionId',
     async (request, reply) => {

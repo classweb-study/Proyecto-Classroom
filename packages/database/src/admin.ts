@@ -456,6 +456,25 @@ export function createAdminRepository(pool: Pool) {
       }
     },
 
+    updateApplicant(input: {
+      actorUserId: string;
+      institutionId: string;
+      requestId: string;
+      fullName: string;
+      contactEmail: string;
+      institutionalCode: string;
+    }) {
+      return asInstitutionAdmin(pool, input.actorUserId, input.institutionId, async client => {
+        const result = await client.query(
+          `UPDATE institution_access_requests
+              SET full_name = $3, contact_email = $4, institutional_code = $5, updated_at = now()
+            WHERE id = $1 AND institution_id = $2 AND status = 'PENDING'`,
+          [input.requestId, input.institutionId, input.fullName, input.contactEmail, input.institutionalCode],
+        );
+        return result.rowCount === 1 ? { status: 'OK' } as const : { status: 'NOT_FOUND' } as const;
+      });
+    },
+
     async approveAccessRequest(input: {
       actorUserId: string;
       institutionId: string;
