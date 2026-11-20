@@ -157,3 +157,19 @@ tokens o cookies como evidencia.
 ### Repositorios individuales de actividades
 
 El profesor publica una actividad de tipo Repositorio con el enlace de una plantilla marcada como **Template repository** en GitHub. El estudiante abre la tarjeta de la tarea, crea su copia en GitHub y entrega en WebClass el enlace de su repositorio. Para repositorios privados debe dar acceso al docente. La fecha del último push se consulta en la API pública de GitHub y puede no estar disponible. Este flujo no requiere credenciales de aprovisionamiento en Vercel.
+
+### Guion de demostración y presentaciones
+
+Para la demostración usa una institución de prueba, cuentas distintas para cada rol y una plantilla pública marcada como tal en GitHub. Prepara el código de la clase y prueba el recorrido completo antes de presentarlo.
+
+1. El administrador general registra la institución. Una persona solicita administrarla y el titular aprueba la solicitud.
+2. El administrador institucional aprueba las solicitudes del profesor y del estudiante.
+3. El profesor crea la clase y comparte el código. El estudiante se une y ve al profesor y a sus compañeros.
+4. El profesor prepara una plantilla en GitHub y publica la tarea con ese enlace en WebClass.
+5. El estudiante abre la tarjeta de la tarea, crea su copia en GitHub y sube un cambio.
+6. El estudiante entrega el enlace. El docente revisa el repositorio, los intentos y la fecha de entrega, y registra su evaluación. El último push público es un dato de GitHub y puede cambiar después de la entrega.
+7. El administrador general muestra el historial de acciones institucionales.
+
+**Presentación técnica.** Mostrar el recorrido de una solicitud y de una entrega, desde React y la API Fastify hasta PostgreSQL. Explicar dónde se validan los permisos, cómo se separan instituciones y cómo se enlaza GitHub. Cerrar con pruebas, despliegue y límites de verificación para repositorios privados.
+
+**Presentación empresarial.** Abrir con el trabajo de coordinar permisos, plantillas y enlaces de entregas en un curso de programación. Mostrar el flujo anterior y el valor para cada rol. Proponer un piloto de un curso y medir tiempo de preparación, entregas con enlaces correctos y tiempo de revisión antes de ofrecer una adopción más amplia.
