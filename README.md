@@ -140,7 +140,7 @@ de Neon solo con una decision explicita del responsable del proyecto.
 
 - Commit de infraestructura y migraciones: `2330dc1`.
 - Produccion: `https://www.webclass.study`.
-- Deployment Vercel: `dpl_4kSj95SBqqzc7e4zRTWF7s4pXqYn`.
+- Deployment automatico de Vercel: `dpl_HazNUSJa2naQibc5WsHwxqk1jW2o` (commit `b862e33`).
 - Neon: siete migraciones de Drizzle registradas; existen tablas de solicitudes,
   instituciones, cursos, actividades, miembros y entregas.
 - Verificado: `npm run typecheck`, `npm run build`, `npm test` (365 pruebas),
