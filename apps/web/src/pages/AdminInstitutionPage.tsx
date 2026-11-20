@@ -8,6 +8,8 @@ type Overview = {
     name: string;
     slug: string;
     description: string | null;
+    logoUrl: string | null;
+    accentColor: string | null;
   };
   domains: Domain[];
 };
@@ -31,6 +33,8 @@ export function AdminInstitutionPage({
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [logoUrl, setLogoUrl] = useState('');
+  const [accentColor, setAccentColor] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
@@ -53,6 +57,8 @@ export function AdminInstitutionPage({
       setOverview(body);
       setName(body.institution.name);
       setDescription(body.institution.description ?? '');
+      setLogoUrl(body.institution.logoUrl ?? '');
+      setAccentColor(body.institution.accentColor ?? '');
       setLoadFailed(false);
     } catch {
       setLoadFailed(true);
@@ -75,7 +81,12 @@ export function AdminInstitutionPage({
           method: 'PATCH',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, description }),
+          body: JSON.stringify({
+            name,
+            description,
+            logoUrl,
+            accentColor,
+          }),
         },
       );
 
@@ -85,14 +96,18 @@ export function AdminInstitutionPage({
 
       setSaveMessage('Cambios guardados.');
 
-      if (name.trim() !== overview?.institution.name) {
+      if (
+        name.trim() !== overview?.institution.name ||
+        logoUrl !== (overview?.institution.logoUrl ?? '') ||
+        accentColor !== (overview?.institution.accentColor ?? '')
+      ) {
         onInstitutionRenamed();
       }
 
       await load();
     } catch {
       setSaveMessage(
-        'No pudimos guardar. El nombre debe tener entre 2 y 120 caracteres.',
+        'No pudimos guardar. El nombre debe tener entre 2 y 120 caracteres, el logo debe ser un enlace https:// y el color tener el formato #RRGGBB.',
       );
     } finally {
       setSaving(false);
@@ -226,8 +241,66 @@ export function AdminInstitutionPage({
                 />
               </div>
 
+              <div className="form-grid">
+                <div className="form-field">
+                  <label htmlFor="institution-logo">
+                    Logo (enlace https, opcional)
+                  </label>
+                  <input
+                    id="institution-logo"
+                    type="url"
+                    maxLength={500}
+                    placeholder="https://…/logo.png"
+                    value={logoUrl}
+                    onChange={event => setLogoUrl(event.target.value)}
+                  />
+                </div>
+
+                <div className="form-field">
+                  <label htmlFor="institution-accent">
+                    Color institucional (opcional)
+                  </label>
+                  <div className="color-field">
+                    <input
+                      type="color"
+                      aria-label="Elegir color"
+                      value={accentColor || '#169c5a'}
+                      onChange={event =>
+                        setAccentColor(event.target.value)
+                      }
+                    />
+                    <input
+                      id="institution-accent"
+                      maxLength={7}
+                      placeholder="#169c5a"
+                      value={accentColor}
+                      onChange={event =>
+                        setAccentColor(event.target.value)
+                      }
+                    />
+                    {accentColor && (
+                      <button
+                        type="button"
+                        className="link-button"
+                        onClick={() => setAccentColor('')}
+                      >
+                        Quitar
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {logoUrl.startsWith('https://') && (
+                <div className="logo-preview">
+                  <img src={logoUrl} alt="Vista previa del logo" />
+                </div>
+              )}
+
               <span className="field-hint">
-                Identificador: {overview.institution.slug}
+                Identificador: {overview.institution.slug}. El logo y
+                el color se muestran en la barra lateral de todos los
+                miembros.
               </span>
 
               {saveMessage && (

@@ -8,33 +8,40 @@ import { createRoot } from 'react-dom/client';
 
 import {
   AppShell,
-  type AdminPage,
+  type AppPage,
+  type ViewRole,
 } from './components/AppShell';
 import { AdminHomePage } from './pages/AdminHomePage';
 import { AdminUsersPage } from './pages/AdminUsersPage';
 import { AdminMembersPage } from './pages/AdminMembersPage';
 import { AccessRequestsPage } from './pages/AccessRequestsPage';
 import { AdminInstitutionPage } from './pages/AdminInstitutionPage';
+import { CoursesSection } from './pages/CoursesPage';
+import { StudentHomePage, TeacherHomePage } from './pages/HomeDashboards';
+import { PlatformPage } from './pages/PlatformPage';
+import { ProfilePage } from './pages/ProfilePage';
+import type { Navigate } from './lib/api';
+
+import './style.css';
 
 const ACTIVE_INSTITUTION_KEY = 'vmat-active-institution';
+const VIEW_ROLE_KEY = 'vmat-view-role';
 
-function readStoredInstitution(): string | null {
+function readStored(key: string): string | null {
   try {
-    return window.localStorage.getItem(ACTIVE_INSTITUTION_KEY);
+    return window.localStorage.getItem(key);
   } catch {
     return null;
   }
 }
 
-function storeInstitution(institutionId: string) {
+function store(key: string, value: string) {
   try {
-    window.localStorage.setItem(ACTIVE_INSTITUTION_KEY, institutionId);
+    window.localStorage.setItem(key, value);
   } catch {
-    // Remembering the choice is a convenience; the switch still works without it.
+    // Remembering the choice is a convenience; switching still works without it.
   }
 }
-
-import './style.css';
 
 type InstitutionRole = 'ADMIN' | 'TEACHER' | 'STUDENT';
 type AcademicIdentityStatus =
@@ -52,11 +59,14 @@ type CurrentUser = {
   academicIdentity: null | {
     displayName?: string;
   };
+  isPlatformAdmin?: boolean;
   institutions: Array<{
     id: string;
     name: string;
     slug: string;
     roles: InstitutionRole[];
+    logoUrl?: string | null;
+    accentColor?: string | null;
     academicIdentity: null | {
       institutionalIdentifier: string;
       status: AcademicIdentityStatus;
@@ -69,6 +79,22 @@ type AuthState =
   | { status: 'anonymous' }
   | { status: 'authenticated'; user: CurrentUser }
   | { status: 'error' };
+
+type View = {
+  page: AppPage;
+  courseId?: string;
+  activityId?: string;
+};
+
+const ROLE_PRIORITY: ViewRole[] = ['ADMIN', 'TEACHER', 'STUDENT'];
+
+const PAGES_BY_ROLE: Record<ViewRole, AppPage[]> = {
+  ADMIN: ['home', 'users', 'teachers', 'students', 'institution'],
+  TEACHER: ['home', 'courses'],
+  STUDENT: ['home', 'courses'],
+};
+
+const COMMON_PAGES: AppPage[] = ['profile', 'requests', 'platform'];
 
 function GitHubIcon() {
   return (
@@ -87,16 +113,35 @@ function App() {
   });
 
   const [loggingOut, setLoggingOut] = useState(false);
-  const [activePage, setActivePage] =
-    useState<AdminPage>('home');
+  const [view, setView] = useState<View>({ page: 'home' });
   const [activeInstitutionId, setActiveInstitutionId] =
-    useState<string | null>(readStoredInstitution);
+    useState<string | null>(() => readStored(ACTIVE_INSTITUTION_KEY));
+  const [preferredRole, setPreferredRole] = useState<string | null>(() =>
+    readStored(VIEW_ROLE_KEY),
+  );
+  const [platformOnly, setPlatformOnly] = useState(false);
 
   function switchInstitution(institutionId: string) {
+    // Switching never carries course or request ids across institutions.
     setActiveInstitutionId(institutionId);
-    storeInstitution(institutionId);
-    setActivePage('home');
+    store(ACTIVE_INSTITUTION_KEY, institutionId);
+    setView({ page: 'home' });
   }
+
+  function switchRole(role: ViewRole) {
+    setPreferredRole(role);
+    store(VIEW_ROLE_KEY, role);
+    setView({ page: 'home' });
+  }
+
+  const navigate: Navigate = target => {
+    setView({
+      page: target.page as AppPage,
+      courseId: target.courseId,
+      activityId: target.activityId,
+    });
+    window.scrollTo({ top: 0 });
+  };
 
   const loadSession = useCallback((signal?: AbortSignal) => {
     return fetch('/me', {
@@ -228,69 +273,95 @@ function App() {
   }
 
   const { user } = auth;
+  const isPlatformAdmin = user.isPlatformAdmin === true;
   const institution =
     user.institutions.find(
       item => item.id === activeInstitutionId,
     ) ?? user.institutions[0];
 
-  const institutionSwitcher =
-    user.institutions.length > 1 && institution ? (
-      <select
-        className="institution-select"
-        aria-label="Institución activa"
-        value={institution.id}
-        onChange={event => switchInstitution(event.target.value)}
-      >
-        {user.institutions.map(item => (
-          <option key={item.id} value={item.id}>
-            {item.name}
-          </option>
-        ))}
-      </select>
-    ) : null;
-
+  // Without an approved institution the only things available are the
+  // request flow and, for platform admins, institution registration.
   if (!institution) {
+    if (platformOnly && isPlatformAdmin) {
+      return (
+        <main className="access-requests-page">
+          <button
+            type="button"
+            className="link-button back-link"
+            onClick={() => setPlatformOnly(false)}
+          >
+            ← Mis solicitudes
+          </button>
+          <PlatformPage onChanged={() => void loadSession()} />
+        </main>
+      );
+    }
+
     return (
       <AccessRequestsPage
         githubLogin={user.github.login}
         loggingOut={loggingOut}
         onLogout={logout}
+        onOpenPlatform={
+          isPlatformAdmin ? () => setPlatformOnly(true) : undefined
+        }
       />
     );
   }
 
-  if (!institution.roles.includes('ADMIN')) {
-    return (
-      <main className="center-screen">
-        <div className="error-card">
-          <p className="eyebrow">VMAT</p>
-          <h1>Perfil académico registrado</h1>
+  const viewRole: ViewRole =
+    ROLE_PRIORITY.find(
+      role =>
+        role === preferredRole && institution.roles.includes(role),
+    ) ??
+    ROLE_PRIORITY.find(role => institution.roles.includes(role)) ??
+    'STUDENT';
 
-          <p className="muted">
-            Esta cuenta pertenece a {institution.name}, pero la
-            interfaz para su rol todavía no está habilitada en
-            esta etapa del desarrollo.
-          </p>
+  // A page from another role (e.g. after switching) falls back to home.
+  const page: AppPage =
+    PAGES_BY_ROLE[viewRole].includes(view.page) ||
+    (COMMON_PAGES.includes(view.page) &&
+      (view.page !== 'platform' || isPlatformAdmin))
+      ? view.page
+      : 'home';
 
-          {institutionSwitcher}
+  function renderPage() {
+    switch (page) {
+      case 'profile':
+        return (
+          <ProfilePage
+            githubLogin={user.github.login}
+            avatarUrl={user.github.avatarUrl}
+            institutions={user.institutions}
+            onOpenRequests={() => navigate({ page: 'requests' })}
+          />
+        );
 
-          <button
-            type="button"
-            className="logout-button"
-            onClick={logout}
-            disabled={loggingOut}
-          >
-            {loggingOut
-              ? 'Cerrando sesión…'
-              : 'Cerrar sesión'}
-          </button>
-        </div>
-      </main>
-    );
-  }
+      case 'requests':
+        return (
+          <AccessRequestsPage
+            embedded
+            githubLogin={user.github.login}
+            loggingOut={loggingOut}
+            onLogout={logout}
+          />
+        );
 
-  function renderAdminPage() {
-    switch (activePage) {
+      case 'platform':
+        return <PlatformPage onChanged={() => void loadSession()} />;
+
+      case 'courses':
+        return (
+          <CoursesSection
+            key={`${institution.id}-${viewRole}`}
+            institutionId={institution.id}
+            role={viewRole === 'TEACHER' ? 'TEACHER' : 'STUDENT'}
+            courseId={view.courseId}
+            activityId={view.activityId}
+            navigate={navigate}
+          />
+        );
+
       case 'users':
         return (
           <AdminUsersPage
@@ -329,11 +400,27 @@ function App() {
 
       case 'home':
       default:
-        return (
-          <AdminHomePage
+        if (viewRole === 'ADMIN') {
+          return (
+            <AdminHomePage
+              institutionId={institution.id}
+              institutionName={institution.name}
+              onOpenRequests={() => navigate({ page: 'users' })}
+            />
+          );
+        }
+
+        return viewRole === 'TEACHER' ? (
+          <TeacherHomePage
             institutionId={institution.id}
             institutionName={institution.name}
-            onOpenRequests={() => setActivePage('users')}
+            navigate={navigate}
+          />
+        ) : (
+          <StudentHomePage
+            institutionId={institution.id}
+            institutionName={institution.name}
+            navigate={navigate}
           />
         );
     }
@@ -341,19 +428,24 @@ function App() {
 
   return (
     <AppShell
-      activePage={activePage}
-      onNavigate={setActivePage}
+      activePage={page}
+      onNavigate={next => navigate({ page: next })}
       githubLogin={user.github.login}
       avatarUrl={user.github.avatarUrl}
       institutionName={institution.name}
+      institutionLogoUrl={institution.logoUrl}
+      institutionAccent={institution.accentColor}
       institutions={user.institutions}
       activeInstitutionId={institution.id}
       onSwitchInstitution={switchInstitution}
       roles={institution.roles}
+      viewRole={viewRole}
+      onSwitchRole={switchRole}
+      isPlatformAdmin={isPlatformAdmin}
       loggingOut={loggingOut}
       onLogout={logout}
     >
-      {renderAdminPage()}
+      {renderPage()}
     </AppShell>
   );
 }

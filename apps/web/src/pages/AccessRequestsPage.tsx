@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 
+import { RequestMessages } from '../components/RequestMessages';
+
 type AccessRole = 'TEACHER' | 'STUDENT';
 
 type RequestStatus =
@@ -21,6 +23,12 @@ type MyAccessRequest = {
   requestedRole: AccessRole | null;
   assignedRole: AccessRole | null;
   decisionReason: string | null;
+  fullName: string | null;
+  contactEmail: string | null;
+  institutionalEmail: string | null;
+  institutionalCode: string | null;
+  requestReason: string | null;
+  messageCount: number;
   createdAt: string;
   decidedAt: string | null;
 };
@@ -34,6 +42,9 @@ type AccessRequestsPageProps = {
   githubLogin: string;
   loggingOut: boolean;
   onLogout: () => void;
+  /** Shown inside the app shell for people who already belong somewhere. */
+  embedded?: boolean;
+  onOpenPlatform?: () => void;
 };
 
 const STATUS_LABEL: Record<RequestStatus, string> = {
@@ -73,25 +84,32 @@ function formatDate(value: string) {
 function NewRequestForm({
   onSubmitted,
   onCancel,
+  prefill,
 }: {
   onSubmitted: () => void;
   onCancel: () => void;
+  /** A denied or cancelled request to correct and send again. */
+  prefill?: MyAccessRequest;
 }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Institution[]>([]);
   const [searchFailed, setSearchFailed] = useState(false);
   const [institution, setInstitution] =
-    useState<Institution | null>(null);
+    useState<Institution | null>(prefill?.institution ?? null);
 
   const [requestedRole, setRequestedRole] =
-    useState<AccessRole>('STUDENT');
-  const [fullName, setFullName] = useState('');
-  const [contactEmail, setContactEmail] = useState('');
+    useState<AccessRole>(prefill?.requestedRole ?? 'STUDENT');
+  const [fullName, setFullName] = useState(prefill?.fullName ?? '');
+  const [contactEmail, setContactEmail] = useState(
+    prefill?.contactEmail ?? '',
+  );
   const [institutionalEmail, setInstitutionalEmail] =
-    useState('');
+    useState(prefill?.institutionalEmail ?? '');
   const [institutionalCode, setInstitutionalCode] =
-    useState('');
-  const [requestReason, setRequestReason] = useState('');
+    useState(prefill?.institutionalCode ?? '');
+  const [requestReason, setRequestReason] = useState(
+    prefill?.requestReason ?? '',
+  );
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -194,12 +212,21 @@ function NewRequestForm({
   return (
     <form className="access-form" onSubmit={submit}>
       <div className="access-form-heading">
-        <h2>Nueva solicitud de acceso</h2>
+        <h2>
+          {prefill
+            ? 'Corregir y reenviar solicitud'
+            : 'Nueva solicitud de acceso'}
+        </h2>
         <p className="muted">
           Un administrador de la institución revisará tu
           solicitud. Puedes usar Gmail u otro correo; el acceso
           nunca se concede automáticamente.
         </p>
+        {prefill?.decisionReason && (
+          <p className="decision-reason">
+            Motivo del rechazo anterior: {prefill.decisionReason}
+          </p>
+        )}
       </div>
 
       <div className="form-field">
@@ -380,11 +407,15 @@ export function AccessRequestsPage({
   githubLogin,
   loggingOut,
   onLogout,
+  embedded = false,
+  onOpenPlatform,
 }: AccessRequestsPageProps) {
   const [state, setState] = useState<LoadState>({
     status: 'loading',
   });
   const [showForm, setShowForm] = useState(false);
+  const [prefill, setPrefill] = useState<MyAccessRequest | undefined>();
+  const [openThread, setOpenThread] = useState<string | null>(null);
   const [cancellingId, setCancellingId] =
     useState<string | null>(null);
   const [actionError, setActionError] =
@@ -407,11 +438,12 @@ export function AccessRequestsPage({
       };
 
       setState({ status: 'ready', requests: body.requests });
-      setShowForm(body.requests.length === 0);
+      setShowForm(body.requests.length === 0 && !embedded);
+      setPrefill(undefined);
     } catch {
       setState({ status: 'error' });
     }
-  }, []);
+  }, [embedded]);
 
   useEffect(() => {
     void loadRequests();
@@ -448,27 +480,76 @@ export function AccessRequestsPage({
     state.status === 'ready' &&
     state.requests.some(request => request.status === 'PENDING');
 
-  return (
-    <main className="access-requests-page">
-      <header className="access-requests-header">
-        <div>
-          <p className="eyebrow">VMAT</p>
-          <h1>Acceso a tu institución</h1>
-          <p className="muted">
-            Conectado como @{githubLogin}. Para usar VMAT
-            necesitas que una institución apruebe tu acceso.
-          </p>
-        </div>
+  function pendingFor(institutionId: string) {
+    return (
+      state.status === 'ready' &&
+      state.requests.some(
+        request =>
+          request.status === 'PENDING' &&
+          request.institution.id === institutionId,
+      )
+    );
+  }
 
-        <button
-          type="button"
-          className="logout-button"
-          onClick={onLogout}
-          disabled={loggingOut}
-        >
-          {loggingOut ? 'Cerrando sesión…' : 'Cerrar sesión'}
-        </button>
-      </header>
+  const Wrapper = embedded ? 'div' : 'main';
+
+  return (
+    <Wrapper
+      className={embedded ? 'admin-page' : 'access-requests-page'}
+    >
+      {embedded ? (
+        <section className="page-heading">
+          <div>
+            <p className="page-kicker">MI CUENTA</p>
+            <h1>Mis solicitudes</h1>
+            <p>
+              Solicita acceso a otra institución o revisa el estado
+              de tus solicitudes.
+            </p>
+          </div>
+        </section>
+      ) : (
+        <header className="access-requests-header">
+          <div>
+            <p className="eyebrow">VMAT</p>
+            <h1>Acceso a tu institución</h1>
+            <p className="muted">
+              Conectado como @{githubLogin}. Para usar VMAT
+              necesitas que una institución apruebe tu acceso.
+              Mientras tanto no podrás ver cursos ni entregar
+              trabajos.
+            </p>
+            <ol className="next-steps">
+              <li>Busca tu universidad y envía la solicitud.</li>
+              <li>Un administrador de esa universidad la revisa.</li>
+              <li>
+                Si te pide más datos, verás su mensaje aquí. Cuando
+                la apruebe, recarga la página para entrar.
+              </li>
+            </ol>
+          </div>
+
+          <div className="header-actions">
+            {onOpenPlatform && (
+              <button
+                type="button"
+                className="secondary-action"
+                onClick={onOpenPlatform}
+              >
+                Administrar plataforma
+              </button>
+            )}
+            <button
+              type="button"
+              className="logout-button"
+              onClick={onLogout}
+              disabled={loggingOut}
+            >
+              {loggingOut ? 'Cerrando sesión…' : 'Cerrar sesión'}
+            </button>
+          </div>
+        </header>
+      )}
 
       {state.status === 'loading' && (
         <div className="admin-loading">
@@ -491,8 +572,13 @@ export function AccessRequestsPage({
 
       {state.status === 'ready' && showForm && (
         <NewRequestForm
+          key={prefill?.id ?? 'new'}
+          prefill={prefill}
           onSubmitted={() => void loadRequests()}
-          onCancel={() => setShowForm(false)}
+          onCancel={() => {
+            setShowForm(false);
+            setPrefill(undefined);
+          }}
         />
       )}
 
@@ -526,12 +612,16 @@ export function AccessRequestsPage({
             </p>
           )}
 
+          {state.requests.length === 0 && (
+            <p className="field-hint">
+              No has enviado solicitudes.
+            </p>
+          )}
+
           <div className="access-request-list">
             {state.requests.map(request => (
-              <article
-                className="my-request-row"
-                key={request.id}
-              >
+              <div className="access-request-item" key={request.id}>
+              <article className="my-request-row">
                 <div className="my-request-main">
                   <strong>{request.institution.name}</strong>
                   <span>
@@ -565,23 +655,62 @@ export function AccessRequestsPage({
                   {STATUS_LABEL[request.status]}
                 </span>
 
-                {request.status === 'PENDING' && (
+                <div className="my-request-actions">
                   <button
                     type="button"
-                    className="deny-button"
-                    disabled={cancellingId === request.id}
-                    onClick={() => void cancel(request.id)}
+                    className="link-button"
+                    onClick={() =>
+                      setOpenThread(
+                        openThread === request.id ? null : request.id,
+                      )
+                    }
                   >
-                    {cancellingId === request.id
-                      ? 'Cancelando…'
-                      : 'Cancelar'}
+                    Mensajes
+                    {request.messageCount > 0 &&
+                      ` (${request.messageCount})`}
                   </button>
-                )}
+
+                  {(request.status === 'DENIED' ||
+                    request.status === 'CANCELLED') &&
+                    !pendingFor(request.institution.id) && (
+                      <button
+                        type="button"
+                        className="secondary-action"
+                        onClick={() => {
+                          setPrefill(request);
+                          setShowForm(true);
+                        }}
+                      >
+                        Corregir y reenviar
+                      </button>
+                    )}
+
+                  {request.status === 'PENDING' && (
+                    <button
+                      type="button"
+                      className="deny-button"
+                      disabled={cancellingId === request.id}
+                      onClick={() => void cancel(request.id)}
+                    >
+                      {cancellingId === request.id
+                        ? 'Cancelando…'
+                        : 'Cancelar'}
+                    </button>
+                  )}
+                </div>
               </article>
+
+              {openThread === request.id && (
+                <RequestMessages
+                  endpoint={`/me/access-requests/${request.id}/messages`}
+                  viewer="requester"
+                />
+              )}
+              </div>
             ))}
           </div>
         </section>
       )}
-    </main>
+    </Wrapper>
   );
 }

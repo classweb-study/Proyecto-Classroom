@@ -11,6 +11,7 @@ type Overview = {
     teachers: number;
     students: number;
     pendingRequests: number;
+    courses: number;
   };
   domains: Array<{ id: string; domain: string }>;
 };
@@ -49,8 +50,13 @@ function describe(entry: AuditEntry): string {
       return `${actor} canceló su solicitud`;
     case 'MEMBERSHIP_REVOKED':
       return `${actor} revocó el acceso de ${target}`;
+    case 'INSTITUTION_CREATED':
+      return `${actor} registró la institución y nombró administrador a ${target}`;
     case 'MEMBERSHIP_ROLE_CHANGED': {
       const [from, to] = (entry.details ?? '').split('->');
+      if (to === 'ADMIN') {
+        return `${actor} nombró administrador a ${target}`;
+      }
       return `${actor} cambió a ${target} de ${ROLE_LABEL[from ?? ''] ?? from} a ${ROLE_LABEL[to ?? ''] ?? to}`;
     }
     case 'INSTITUTION_UPDATED':
@@ -194,6 +200,14 @@ export function AdminHomePage({
                 <span className="summary-label">Estudiantes</span>
                 <strong>{state.overview.counts.students}</strong>
                 <p>Con acceso activo</p>
+              </div>
+            </article>
+
+            <article className="summary-card">
+              <div>
+                <span className="summary-label">Cursos</span>
+                <strong>{state.overview.counts.courses}</strong>
+                <p>Activos</p>
               </div>
             </article>
           </section>
