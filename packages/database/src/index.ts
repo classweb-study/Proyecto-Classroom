@@ -62,7 +62,6 @@ export {
 
 export {
   createPlatformRepository,
-  type AssignAdminResult,
   type CreateInstitutionResult,
   type PlatformInstitution,
 } from './platform.js';

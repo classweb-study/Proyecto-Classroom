@@ -57,6 +57,13 @@
       "when": 1795144382160,
       "tag": "0007_student_assignment_repositories",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1795146843625,
+      "tag": "0008_institution_admin_requests",
+      "breakpoints": true
     }
   ]
 }

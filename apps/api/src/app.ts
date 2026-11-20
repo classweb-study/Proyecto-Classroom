@@ -60,7 +60,7 @@ export interface AppDependencies {
 }
 
 const SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?$/;
-const GITHUB_LOGIN_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
+
 const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
 
 function optionalHttpsUrl(value: unknown): string | null | false {
@@ -218,14 +218,12 @@ export function createApp(dependencies?: AppDependencies) {
     secureCookies,
   } = dependencies;
 
-  const platformAdmins = new Set(
-    (dependencies.platformAdminGithubIds ?? []).filter(id =>
-      /^\d+$/.test(id),
-    ),
-  );
+  // A deployment with ambiguous ownership must not elevate multiple accounts.
+  const configuredOwners = dependencies.platformAdminGithubIds ?? [];
+  const platformOwner = configuredOwners.length === 1 ? configuredOwners[0] : undefined;
 
   function isPlatformAdmin(user: { githubUserId: bigint }) {
-    return platformAdmins.has(user.githubUserId.toString());
+    return platformOwner === user.githubUserId.toString();
   }
 
   const frontendOrigin = normalizeOrigin(dependencies.frontendOrigin);
@@ -267,6 +265,13 @@ export function createApp(dependencies?: AppDependencies) {
 
     return user;
   }
+
+  app.addHook('preHandler', async (request, reply) => {
+    if (platformOwner && request.routeOptions.url?.startsWith('/admin/')) {
+      const user = await sessionUser(request.headers.cookie);
+      if (user && isPlatformAdmin(user)) return reply.code(403).send({error:'FORBIDDEN'});
+    }
+  });
 
   app.setErrorHandler((error, _request, reply) => {
     if (
@@ -1366,7 +1371,7 @@ export function createApp(dependencies?: AppDependencies) {
 
     app.post<{
       Body:
-        | { name?: unknown; slug?: unknown; firstAdminLogin?: unknown }
+        | { name?: unknown; slug?: unknown }
         | undefined;
     }>('/platform/institutions', async (request, reply) => {
       const user = await platformActor(request as never, reply, []);
@@ -1378,16 +1383,7 @@ export function createApp(dependencies?: AppDependencies) {
         typeof request.body?.slug === 'string'
           ? request.body.slug.trim().toLowerCase()
           : '';
-      const login =
-        typeof request.body?.firstAdminLogin === 'string'
-          ? request.body.firstAdminLogin.trim().replace(/^@/, '')
-          : '';
-
-      if (
-        !name ||
-        !SLUG_PATTERN.test(slug) ||
-        !GITHUB_LOGIN_PATTERN.test(login)
-      ) {
+      if (!name || !SLUG_PATTERN.test(slug)) {
         return reply.code(400).send({ error: 'INVALID_INSTITUTION' });
       }
 
@@ -1395,15 +1391,10 @@ export function createApp(dependencies?: AppDependencies) {
         actorUserId: user.userId,
         name,
         slug,
-        firstAdminLogin: login,
       });
 
       if (result.status === 'DUPLICATE') {
         return reply.code(409).send({ error: 'SLUG_ALREADY_EXISTS' });
-      }
-
-      if (result.status === 'USER_NOT_FOUND') {
-        return reply.code(404).send({ error: 'ADMIN_USER_NOT_FOUND' });
       }
 
       return reply
@@ -1411,44 +1402,39 @@ export function createApp(dependencies?: AppDependencies) {
         .send({ institutionId: result.institutionId });
     });
 
-    app.post<{
-      Params: { institutionId: string };
-      Body: { adminLogin?: unknown } | undefined;
-    }>(
-      '/platform/institutions/:institutionId/admins',
-      async (request, reply) => {
-        const user = await platformActor(request, reply, [
-          'institutionId',
-        ]);
+    app.get('/me/admin-requests', async (request, reply) => {
+      const user = await adminRouteActor(request as never, reply, []);
+      if (!user) return reply;
+      return { requests: await platform.listRequests(user.userId) };
+    });
 
-        if (!user) return reply;
+    app.post<{Params: {institutionId: string}}>('/me/admin-requests/:institutionId', async (request, reply) => {
+      const user = await adminRouteActor(request, reply, ['institutionId']);
+      if (!user) return reply;
+      if (isPlatformAdmin(user)) return reply.code(403).send({error: 'FORBIDDEN'});
+      const created = await platform.requestAdmin(user.userId, request.params.institutionId);
+      return created ? reply.code(201).send({status:'PENDING'}) : reply.code(409).send({error:'REQUEST_UNAVAILABLE'});
+    });
 
-        const login =
-          typeof request.body?.adminLogin === 'string'
-            ? request.body.adminLogin.trim().replace(/^@/, '')
-            : '';
+    app.get('/platform/admin-requests', async (request, reply) => {
+      if (!await platformActor(request as never, reply, [])) return reply;
+      return {requests: await platform.listRequests(null)};
+    });
 
-        if (!GITHUB_LOGIN_PATTERN.test(login)) {
-          return reply.code(400).send({ error: 'INVALID_LOGIN' });
-        }
+    app.post<{Params: {id: string}; Body: {decision?: string}}>('/platform/admin-requests/:id', async (request, reply) => {
+      const user = await platformActor(request, reply, ['id']);
+      if (!user) return reply;
+      const decision = request.body?.decision;
+      if (decision !== 'APPROVED' && decision !== 'DENIED') return reply.code(400).send({error:'INVALID_DECISION'});
+      const changed = await platform.decideRequest(user.userId, request.params.id, decision === 'APPROVED');
+      return changed ? {status:decision} : reply.code(409).send({error:'ALREADY_DECIDED'});
+    });
 
-        const result = await platform.assignInstitutionAdmin({
-          actorUserId: user.userId,
-          institutionId: request.params.institutionId,
-          adminLogin: login,
-        });
+    app.get('/platform/admin-history', async (request, reply) => {
+      if (!await platformActor(request as never, reply, [])) return reply;
+      return {events: await platform.listAdminHistory()};
+    });
 
-        if (result.status === 'NOT_FOUND') {
-          return reply.code(404).send({ error: 'NOT_FOUND' });
-        }
-
-        if (result.status === 'USER_NOT_FOUND') {
-          return reply.code(404).send({ error: 'ADMIN_USER_NOT_FOUND' });
-        }
-
-        return reply.code(201).send({ status: 'ASSIGNED' });
-      },
-    );
   }
 
   if (academic) {

@@ -391,6 +391,8 @@ export const institutionAuditActionEnum = pgEnum(
     'DOMAIN_ADDED',
     'DOMAIN_REMOVED',
     'INSTITUTION_CREATED',
+    'APPLICANT_UPDATED',
+    'MEMBERSHIP_RESTORED',
   ],
 );
 
@@ -637,4 +639,17 @@ export const assignmentRepositories = pgTable('assignment_repositories', {
 }, table => [
   uniqueIndex('assignment_repository_student').on(table.activityId, table.studentId),
   uniqueIndex('assignment_repository_name').on(table.owner, table.name),
+]);
+
+export const institutionAdminRequests = pgTable('institution_admin_requests', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').notNull().references(() => users.id),
+  institutionId: uuid('institution_id').notNull().references(() => institutions.id),
+  status: institutionAccessRequestStatusEnum('status').notNull().default('PENDING'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  decidedAt: timestamp('decided_at', { withTimezone: true }),
+  decidedBy: uuid('decided_by').references(() => users.id),
+}, table => [
+  uniqueIndex('institution_admin_request_pending').on(table.userId, table.institutionId)
+    .where(sql`${table.status} = 'PENDING'`),
 ]);

@@ -20,62 +20,10 @@ export type PlatformInstitution = {
 
 export type CreateInstitutionResult =
   | { status: 'OK'; institutionId: string }
-  | { status: 'DUPLICATE' }
-  | { status: 'USER_NOT_FOUND' };
-
-export type AssignAdminResult =
-  | { status: 'OK' }
-  | { status: 'NOT_FOUND' }
-  | { status: 'USER_NOT_FOUND' };
+  | { status: 'DUPLICATE' };
 
 async function rollback(client: PoolClient) {
   await client.query('ROLLBACK').catch(() => {});
-}
-
-async function findUserByLogin(client: PoolClient, login: string) {
-  const result = await client.query<{ user_id: string }>(
-    `SELECT user_id FROM github_identities WHERE lower(login) = lower($1)`,
-    [login],
-  );
-
-  return result.rows[0]?.user_id ?? null;
-}
-
-async function grantAdmin(
-  client: PoolClient,
-  input: {
-    actorUserId: string;
-    institutionId: string;
-    userId: string;
-    action: 'INSTITUTION_CREATED' | 'MEMBERSHIP_ROLE_CHANGED';
-    details: string;
-  },
-) {
-  await client.query(
-    `
-      INSERT INTO institution_memberships(user_id, institution_id, role)
-      VALUES ($1, $2, 'ADMIN')
-      ON CONFLICT (user_id, institution_id, role)
-      DO UPDATE SET status = 'ACTIVE', updated_at = now()
-    `,
-    [input.userId, input.institutionId],
-  );
-
-  await client.query(
-    `
-      INSERT INTO institution_audit_events(
-        institution_id, actor_user_id, action, target_user_id, details
-      )
-      VALUES ($1, $2, $3, $4, $5)
-    `,
-    [
-      input.institutionId,
-      input.actorUserId,
-      input.action,
-      input.userId,
-      input.details,
-    ],
-  );
 }
 
 async function transaction<T>(
@@ -145,78 +93,84 @@ export function createPlatformRepository(pool: Pool) {
       actorUserId: string;
       name: string;
       slug: string;
-      firstAdminLogin: string;
     }): Promise<CreateInstitutionResult> {
       return transaction(pool, async client => {
-        const adminUserId = await findUserByLogin(
-          client,
-          input.firstAdminLogin,
-        );
-
-        // The first admin must have signed in once so their GitHub id is known.
-        if (!adminUserId) {
-          return { status: 'USER_NOT_FOUND' as const };
-        }
-
-        const created = await client.query<{ id: string }>(
-          `
-            INSERT INTO institutions(name, slug)
-            VALUES ($1, $2)
-            ON CONFLICT (slug) DO NOTHING
-            RETURNING id
-          `,
+        const created = await client.query<{id: string}>(
+          'INSERT INTO institutions(name, slug) VALUES ($1,$2) ON CONFLICT (slug) DO NOTHING RETURNING id',
           [input.name, input.slug],
         );
-
         const institutionId = created.rows[0]?.id;
-
-        if (!institutionId) {
-          return { status: 'DUPLICATE' as const };
-        }
-
-        await grantAdmin(client, {
-          actorUserId: input.actorUserId,
-          institutionId,
-          userId: adminUserId,
-          action: 'INSTITUTION_CREATED',
-          details: `ADMIN:${input.firstAdminLogin}`,
-        });
-
-        return { status: 'OK' as const, institutionId };
+        if (!institutionId) return {status: 'DUPLICATE'};
+        await client.query(
+          "INSERT INTO institution_audit_events(institution_id,actor_user_id,action) VALUES ($1,$2,'INSTITUTION_CREATED')",
+          [institutionId, input.actorUserId],
+        );
+        return {status: 'OK', institutionId};
       });
     },
 
-    async assignInstitutionAdmin(input: {
-      actorUserId: string;
-      institutionId: string;
-      adminLogin: string;
-    }): Promise<AssignAdminResult> {
+    async requestAdmin(userId: string, institutionId: string) {
+      const result = await pool.query(
+        `INSERT INTO institution_admin_requests(user_id,institution_id)
+         SELECT $1,i.id FROM institutions i WHERE i.id=$2 AND NOT EXISTS (
+           SELECT 1 FROM institution_memberships WHERE institution_id=i.id AND user_id=$1 AND role='ADMIN' AND status='ACTIVE'
+         ) ON CONFLICT DO NOTHING RETURNING id`, [userId, institutionId],
+      );
+      return result.rowCount === 1;
+    },
+
+    async listRequests(userId: string | null) {
+      const result = await pool.query(
+        `SELECT r.id, i.name AS institution, g.login, r.status, r.created_at AS "createdAt"
+         FROM institution_admin_requests r JOIN institutions i ON i.id=r.institution_id
+         JOIN github_identities g ON g.user_id=r.user_id
+         WHERE ($1::uuid IS NULL AND r.status='PENDING') OR r.user_id=$1
+         ORDER BY r.created_at DESC, r.id`, [userId],
+      );
+      return result.rows;
+    },
+
+    async decideRequest(actor: string, id: string, approve: boolean) {
       return transaction(pool, async client => {
-        const institution = await client.query(
-          `SELECT 1 FROM institutions WHERE id = $1 FOR UPDATE`,
-          [input.institutionId],
+        const decision = await client.query(
+          `UPDATE institution_admin_requests SET status=$1, decided_at=now(), decided_by=$2
+           WHERE id=$3 AND status='PENDING' RETURNING institution_id,user_id`,
+          [approve ? 'APPROVED' : 'DENIED', actor, id],
         );
-
-        if (institution.rowCount !== 1) {
-          return { status: 'NOT_FOUND' as const };
+        const row = decision.rows[0];
+        if (!row) return false;
+        if (approve) {
+          await client.query(
+            `INSERT INTO institution_memberships(institution_id,user_id,role) VALUES ($1,$2,'ADMIN')
+             ON CONFLICT (user_id,institution_id,role) DO UPDATE SET status='ACTIVE',updated_at=now()`,
+            [row.institution_id,row.user_id],
+          );
         }
-
-        const userId = await findUserByLogin(client, input.adminLogin);
-
-        if (!userId) {
-          return { status: 'USER_NOT_FOUND' as const };
-        }
-
-        await grantAdmin(client, {
-          actorUserId: input.actorUserId,
-          institutionId: input.institutionId,
-          userId,
-          action: 'MEMBERSHIP_ROLE_CHANGED',
-          details: '->ADMIN',
-        });
-
-        return { status: 'OK' as const };
+        return true;
       });
+    },
+
+    async listAdminHistory() {
+      const result = await pool.query(
+        `WITH events AS (
+           SELECT id, institution_id, actor_user_id, target_user_id, action::text, details, created_at
+           FROM institution_audit_events
+           UNION ALL
+           SELECT e.id,r.institution_id,e.actor_user_id,r.user_id,'REQUEST_'||e.action::text,e.reason,e.created_at
+           FROM access_request_events e JOIN institution_access_requests r ON r.id=e.request_id
+           WHERE e.action IN ('APPROVED','DENIED')
+           UNION ALL
+           SELECT m.id,r.institution_id,m.author_user_id,r.user_id,'MESSAGE_SENT',NULL,m.created_at
+           FROM access_request_messages m JOIN institution_access_requests r ON r.id=m.request_id WHERE m.from_admin
+         )
+         SELECT e.id,i.name AS institution,g.login AS "actorLogin",t.login AS "targetLogin",e.action,e.details,e.created_at AS "createdAt"
+         FROM events e JOIN institutions i ON i.id=e.institution_id
+         JOIN github_identities g ON g.user_id=e.actor_user_id
+         LEFT JOIN github_identities t ON t.user_id=e.target_user_id
+         WHERE e.action <> 'INSTITUTION_CREATED'
+         ORDER BY e.created_at DESC,e.id`,
+      );
+      return result.rows;
     },
   });
 }

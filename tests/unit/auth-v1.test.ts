@@ -1094,3 +1094,40 @@ describe('Auth v1 HTTP boundary', () => {
     }
   });
 });
+
+
+describe('separación de permisos de administración', () => {
+  const institution = '11111111-1111-4111-8111-111111111111';
+  const headers = {cookie: `${SESSION_COOKIE}=${token('s')}`, origin:'https://vmat.example'};
+  const platform = {
+    listInstitutions: vi.fn(async () => []),
+    createInstitution: vi.fn(async () => ({status:'OK' as const, institutionId:institution})),
+    listRequests: vi.fn(async () => []),
+    requestAdmin: vi.fn(async () => true),
+    decideRequest: vi.fn(async () => true),
+    listAdminHistory: vi.fn(async () => []),
+  };
+
+  it('permite al titular revisar solicitudes de administración y bloquea la asignación de docentes', async () => {
+    const deps = createDependencies();
+    const app = createApp({...deps, platform, platformAdminGithubIds:['123456789']});
+    try {
+      const decision = await app.inject({method:'POST', url:`/platform/admin-requests/${institution}`, headers, payload:{decision:'APPROVED'}});
+      expect(decision.statusCode).toBe(200);
+      const teacher = await app.inject({method:'POST', url:`/admin/institutions/${institution}/access-requests/${institution}/approve`, headers, payload:{role:'TEACHER'}});
+      expect(teacher.statusCode).toBe(403);
+      expect(deps.admin.approveAccessRequest).not.toHaveBeenCalled();
+    } finally {await app.close();}
+  });
+
+  it('permite solicitar un cargo pero protege la creación de instituciones, la decisión y la auditoría', async () => {
+    const app = createApp({...createDependencies(), platform, platformAdminGithubIds:['257880786']});
+    try {
+      expect((await app.inject({method:'POST', url:`/me/admin-requests/${institution}`, headers})).statusCode).toBe(201);
+      for (const url of ['/platform/institutions', `/platform/admin-requests/${institution}`]) {
+        expect((await app.inject({method:'POST', url, headers, payload:{decision:'APPROVED'}})).statusCode).toBe(403);
+      }
+      expect((await app.inject({url:'/platform/admin-history', headers})).statusCode).toBe(403);
+    } finally {await app.close();}
+  });
+});

@@ -181,7 +181,7 @@ async function recordAudit(
       | 'MEMBERSHIP_ROLE_CHANGED'
       | 'INSTITUTION_UPDATED'
       | 'DOMAIN_ADDED'
-      | 'DOMAIN_REMOVED';
+      | 'DOMAIN_REMOVED' | 'APPLICANT_UPDATED' | 'MEMBERSHIP_RESTORED';
     targetUserId?: string;
     details?: string;
   },
@@ -483,9 +483,10 @@ export function createAdminRepository(pool: Pool) {
         const result = await client.query(
           `UPDATE institution_access_requests
               SET full_name = $3, contact_email = $4, institutional_code = $5, updated_at = now()
-            WHERE id = $1 AND institution_id = $2 AND status = 'PENDING'`,
+            WHERE id = $1 AND institution_id = $2 AND status = 'PENDING' RETURNING user_id`,
           [input.requestId, input.institutionId, input.fullName, input.contactEmail, input.institutionalCode],
         );
+        if (result.rowCount) await recordAudit(client, {institutionId: input.institutionId, actorUserId: input.actorUserId, action: 'APPLICANT_UPDATED', targetUserId: result.rows[0].user_id});
         return result.rowCount === 1 ? { status: 'OK' } as const : { status: 'NOT_FOUND' } as const;
       });
     },
@@ -959,8 +960,9 @@ export function createAdminRepository(pool: Pool) {
             WHERE m.id = $2 AND m.id IN (SELECT id FROM (${restorableMemberships}) eligible)
               AND NOT EXISTS (SELECT 1 FROM institution_access_requests r WHERE r.institution_id = $1
                                AND r.user_id = m.user_id AND r.status = 'PENDING')
-            RETURNING m.id`, [institution, membership],
+            RETURNING m.user_id`, [institution, membership],
         );
+        if (restored.rowCount) await recordAudit(client, {institutionId: institution, actorUserId: actor, action: 'MEMBERSHIP_RESTORED', targetUserId: restored.rows[0].user_id});
         return restored.rowCount ? { status: 'OK' as const } : { status: 'STALE_MEMBERSHIP' as const };
       });
     },
