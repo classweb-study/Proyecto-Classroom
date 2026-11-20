@@ -294,7 +294,7 @@ export function AdminMembersPage({
                       </strong>
 
                       <span>
-                        Ingresó{' '}
+                        {institutionName} · Ingresó{' '}
                         {formatDate(member.joinedAt)}
                       </span>
                     </div>

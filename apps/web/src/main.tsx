@@ -444,31 +444,39 @@ function App() {
         );
 
       case 'users':
-        return (
-          <AdminUsersPage
-            institutionId={institution.id}
-            institutionName={institution.name}
-          />
-        );
-
       case 'teachers':
-        return (
-          <AdminMembersPage
-            institutionId={institution.id}
-            institutionName={institution.name}
-            role="TEACHER"
-            currentUserId={user.id}
-          />
-        );
-
       case 'students':
         return (
-          <AdminMembersPage
-            institutionId={institution.id}
-            institutionName={institution.name}
-            role="STUDENT"
-            currentUserId={user.id}
-          />
+          <>
+            <label className="form-field">
+              Filtrar por institución
+              <select value={institution.id} onChange={event => {
+                setActiveInstitutionId(event.target.value);
+                store(ACTIVE_INSTITUTION_KEY, event.target.value);
+                setPreferredRole('ADMIN');
+                store(VIEW_ROLE_KEY, 'ADMIN');
+              }}>
+                {user.institutions.filter(item => item.roles.includes('ADMIN')).map(item => (
+                  <option key={item.id} value={item.id}>{item.name}</option>
+                ))}
+              </select>
+            </label>
+            {page === 'users' ? (
+              <AdminUsersPage
+                key={institution.id}
+                institutionId={institution.id}
+                institutionName={institution.name}
+              />
+            ) : (
+              <AdminMembersPage
+                key={`${institution.id}-${page}`}
+                institutionId={institution.id}
+                institutionName={institution.name}
+                role={page === 'teachers' ? 'TEACHER' : 'STUDENT'}
+                currentUserId={user.id}
+              />
+            )}
+          </>
         );
 
       case 'institution':
