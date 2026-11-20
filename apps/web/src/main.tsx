@@ -1,153 +1,298 @@
-import { StrictMode, useEffect, useState } from 'react';
+import {
+  StrictMode,
+  Suspense,
+  lazy,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { createRoot } from 'react-dom/client';
 
 import {
   AppShell,
   type AdminPage,
 } from './components/AppShell';
+import { GitHubIcon, InstitutionIcon } from './components/icons';
+import { Alert, Card, EmptyState, Spinner, ToastProvider, useToast } from './components/ui';
+import { readAuthError, withoutAuthError } from './session/auth-errors';
+import {
+  DeniedAccessScreen,
+  LoadingScreen,
+  NoInstitutionScreen,
+  PendingAccessScreen,
+  RoleUnavailableScreen,
+  ServerErrorScreen,
+  SessionExpiredScreen,
+} from './pages/status/StatusScreens';
+import { onSessionExpired } from './session/session-events';
+import {
+  accessViewFor,
+  classifyMeResponse,
+  isExpiredSession,
+  type CurrentUser,
+} from './session/session-state';
+import { WelcomePanel } from './onboarding/WelcomePanel';
 import { AdminHomePage } from './pages/AdminHomePage';
-import { AdminUsersPage } from './pages/AdminUsersPage';
-import { AdminMembersPage } from './pages/AdminMembersPage';
+import { initAppearance } from './theme/appearance-store';
 
+import './styles/tokens.css';
 import './style.css';
+import './styles/components.css';
+// Va al final: traduce los nombres viejos (--vmat-*) a los tokens.
+import './styles/compat.css';
 
-type InstitutionRole = 'ADMIN' | 'TEACHER' | 'STUDENT';
-type AcademicIdentityStatus =
-  | 'PENDING'
-  | 'VERIFIED'
-  | 'REJECTED';
+/*
+ * Inicio va en el archivo principal porque es lo primero que se ve al
+ * entrar: diferirlo hacía esperar una segunda descarga (medido: 1,1 s →
+ * 1,6 s con 3G). Las demás páginas se descargan al abrirlas y, después de
+ * entrar, se precargan en segundo plano (prefetchPages) para que navegar
+ * siga siendo instantáneo.
+ */
+const loadAdminUsers = () => import('./pages/AdminUsersPage');
+const loadAdminMembers = () => import('./pages/AdminMembersPage');
+const loadAppearance = () => import('./pages/AppearancePage');
+const loadProfile = () => import('./pages/ProfilePage');
 
-type CurrentUser = {
-  id: string;
-  github: {
-    id: string;
-    login: string;
-    avatarUrl: string | null;
+const AdminUsersPage = lazy(() => loadAdminUsers().then(module => ({ default: module.AdminUsersPage })));
+const AdminMembersPage = lazy(() => loadAdminMembers().then(module => ({ default: module.AdminMembersPage })));
+const AppearancePage = lazy(() => loadAppearance().then(module => ({ default: module.AppearancePage })));
+const ProfilePage = lazy(() => loadProfile().then(module => ({ default: module.ProfilePage })));
+
+function prefetchPages() {
+  const run = () => {
+    for (const load of [loadAdminUsers, loadAdminMembers, loadAppearance, loadProfile]) {
+      void load().catch(() => {
+        // Si falla la precarga, la página se descarga al abrirla.
+      });
+    }
   };
-  academicIdentity: null | {
-    displayName?: string;
-  };
-  institutions: Array<{
-    id: string;
-    name: string;
-    slug: string;
-    roles: InstitutionRole[];
-    academicIdentity: null | {
-      institutionalIdentifier: string;
-      status: AcademicIdentityStatus;
-    };
-  }>;
-  accessRequest: null | {
-    id: string;
-    institution: {
-      id: string;
-      name: string;
-      slug: string;
-    };
-    status: 'PENDING' | 'APPROVED' | 'DENIED';
-    assignedRole: 'TEACHER' | 'STUDENT' | null;
-  };
-};
+  if (typeof window.requestIdleCallback === 'function') {
+    window.requestIdleCallback(run, { timeout: 3000 });
+  } else {
+    setTimeout(run, 1500);
+  }
+}
+
+function PageFallback() {
+  return (
+    <div className="page-fallback">
+      <Spinner size="lg" label="Cargando…" />
+    </div>
+  );
+}
+
+// Solo en desarrollo: en el build de producción esta rama desaparece.
+const ComponentCatalogPage = import.meta.env.DEV
+  ? lazy(() =>
+      import('./pages/ComponentCatalogPage').then(module => ({
+        default: module.ComponentCatalogPage,
+      })),
+    )
+  : null;
 
 type AuthState =
   | { status: 'loading' }
   | { status: 'anonymous' }
   | { status: 'authenticated'; user: CurrentUser }
-  | { status: 'error' };
+  | { status: 'expired' }
+  | { status: 'error'; kind: 'server' | 'network'; code: number | null };
 
-function GitHubIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        fill="currentColor"
-        d="M12 .7a11.5 11.5 0 0 0-3.64 22.4c.58.1.79-.25.79-.56v-2.2c-3.22.7-3.9-1.37-3.9-1.37-.52-1.34-1.29-1.7-1.29-1.7-1.05-.72.08-.7.08-.7 1.17.08 1.78 1.2 1.78 1.2 1.04 1.77 2.72 1.26 3.38.96.1-.75.4-1.26.74-1.55-2.57-.29-5.27-1.28-5.27-5.69 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.16 1.18a10.9 10.9 0 0 1 5.76 0c2.2-1.49 3.16-1.18 3.16-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.42-2.71 5.39-5.29 5.68.42.36.79 1.07.79 2.16v3.2c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .7Z"
-      />
-    </svg>
-  );
-}
+/* Cada cuánto, como mínimo, se revisa la sesión al volver a la pestaña. */
+const SESSION_RECHECK_MS = 60_000;
 
-function EmptyAdminPage({
+/*
+ * Sección que todavía no tiene funciones. Dice qué va a haber ahí sin
+ * mostrar botones de cosas que no existen.
+ */
+function UpcomingSectionPage({
   title,
   description,
+  upcoming,
 }: {
   title: string;
   description: string;
+  upcoming: string;
 }) {
   return (
     <div className="admin-page">
       <section className="page-heading">
         <div>
-          <p className="page-kicker">ADMINISTRACIÓN</p>
+          <p className="page-kicker">Administración</p>
           <h1>{title}</h1>
           <p>{description}</p>
         </div>
       </section>
 
-      <section className="admin-panel">
-        <div className="empty-admin-state large">
-          <div className="empty-admin-letter">
-            {title.charAt(0)}
-          </div>
-
-          <strong>Aún no hay información para mostrar</strong>
-
-          <p>
-            Esta sección se conectará con datos reales de WebClass.
-          </p>
-        </div>
-      </section>
+      <Card>
+        <EmptyState icon={<InstitutionIcon />} title="Esta sección todavía no está disponible" size="lg">
+          {upcoming}
+        </EmptyState>
+      </Card>
     </div>
   );
 }
 
-function App() {
-  const [auth, setAuth] = useState<AuthState>({
-    status: 'loading',
-  });
+let prefetched = false;
 
+/* Precarga las páginas la primera vez que se muestra la aplicación. */
+function PrefetchOnce() {
+  useEffect(() => {
+    if (prefetched) return;
+    prefetched = true;
+    prefetchPages();
+  }, []);
+  return null;
+}
+
+function LoginScreen() {
+  const [authError] = useState(() => readAuthError(window.location.search));
+  const [redirecting, setRedirecting] = useState(false);
+
+  useEffect(() => {
+    document.title = 'Iniciar sesión · WebClass';
+    // Se quita ?auth_error= de la URL para que recargar no repita el aviso.
+    if (authError) {
+      const { pathname, search, hash } = window.location;
+      window.history.replaceState(null, '', `${pathname}${withoutAuthError(search)}${hash}`);
+    }
+  }, [authError]);
+
+  return (
+    <main className="auth-page">
+      <section className="auth-card">
+        <div className="brand-mark" aria-hidden="true">
+          W
+        </div>
+
+        <p className="eyebrow">WebClass</p>
+
+        <h1>Tu aula, conectada con GitHub.</h1>
+
+        <p className="auth-description">
+          Gestiona cursos, entregas y repositorios desde un solo lugar.
+        </p>
+
+        {authError && (
+          <div className="auth-error">
+            <Alert tone="danger" title={authError.title}>
+              {authError.body}
+            </Alert>
+          </div>
+        )}
+
+        <a
+          className="github-button"
+          href="/auth/github"
+          aria-busy={redirecting || undefined}
+          onClick={() => setRedirecting(true)}
+        >
+          <GitHubIcon />
+          Continuar con GitHub
+        </a>
+        <p className="auth-redirecting" role="status">
+          {redirecting ? 'Abriendo GitHub…' : ''}
+        </p>
+
+        <p className="auth-note">
+          GitHub solo confirma quién eres. Qué puedes hacer en cada institución lo decide su
+          administración dentro de WebClass.
+        </p>
+      </section>
+    </main>
+  );
+}
+
+function App() {
+  const toast = useToast();
+  const [auth, setAuth] = useState<AuthState>({ status: 'loading' });
+  const [checking, setChecking] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
-  const [activePage, setActivePage] =
-    useState<AdminPage>('home');
+  const [activePage, setActivePage] = useState<AdminPage>('home');
+
+  const authRef = useRef(auth);
+  authRef.current = auth;
+  const lastCheck = useRef(0);
+
+  /*
+   * Pide /me y decide el estado. `background` = revisión silenciosa
+   * (al volver a la pestaña): si falla la red no se saca a la persona
+   * de lo que estaba haciendo, solo se detecta la sesión vencida.
+   */
+  const loadSession = useCallback(
+    async (options: { background?: boolean; signal?: AbortSignal } = {}) => {
+      const wasAuthenticated = authRef.current.status === 'authenticated';
+      lastCheck.current = Date.now();
+
+      let response: Response;
+      try {
+        response = await fetch('/me', { credentials: 'same-origin', signal: options.signal });
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        if (!options.background) setAuth({ status: 'error', kind: 'network', code: null });
+        return;
+      }
+
+      const outcome = classifyMeResponse(response.status);
+
+      if (outcome === 'anonymous') {
+        setAuth(isExpiredSession(wasAuthenticated, outcome) ? { status: 'expired' } : { status: 'anonymous' });
+        return;
+      }
+
+      if (outcome === 'server-error') {
+        if (!options.background) setAuth({ status: 'error', kind: 'server', code: response.status });
+        return;
+      }
+
+      try {
+        const body = (await response.json()) as { user: CurrentUser };
+        setAuth({ status: 'authenticated', user: body.user });
+      } catch {
+        if (!options.background) setAuth({ status: 'error', kind: 'server', code: response.status });
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     const controller = new AbortController();
-
-    fetch('/me', {
-      credentials: 'same-origin',
-      signal: controller.signal,
-    })
-      .then(async response => {
-        if (response.status === 401) {
-          setAuth({ status: 'anonymous' });
-          return;
-        }
-
-        if (!response.ok) {
-          throw new Error('Unable to load session');
-        }
-
-        const body = (await response.json()) as {
-          user: CurrentUser;
-        };
-
-        setAuth({
-          status: 'authenticated',
-          user: body.user,
-        });
-      })
-      .catch(error => {
-        if (
-          error instanceof DOMException &&
-          error.name === 'AbortError'
-        ) {
-          return;
-        }
-
-        setAuth({ status: 'error' });
-      });
-
+    void loadSession({ signal: controller.signal });
     return () => controller.abort();
-  }, []);
+  }, [loadSession]);
+
+  // Al volver a la pestaña se revisa la sesión: así se detecta si venció
+  // y una solicitud pendiente que ya fue aprobada aparece sola.
+  useEffect(() => {
+    function recheck() {
+      if (document.visibilityState !== 'visible') return;
+      if (authRef.current.status !== 'authenticated') return;
+      if (Date.now() - lastCheck.current < SESSION_RECHECK_MS) return;
+      void loadSession({ background: true });
+    }
+
+    document.addEventListener('visibilitychange', recheck);
+    window.addEventListener('focus', recheck);
+    return () => {
+      document.removeEventListener('visibilitychange', recheck);
+      window.removeEventListener('focus', recheck);
+    };
+  }, [loadSession]);
+
+  // Cualquier pantalla puede avisar que el servidor respondió 401.
+  useEffect(
+    () =>
+      onSessionExpired(() => {
+        if (authRef.current.status === 'authenticated') setAuth({ status: 'expired' });
+      }),
+    [],
+  );
+
+  async function checkAgain() {
+    setChecking(true);
+    await loadSession();
+    setChecking(false);
+  }
 
   async function logout() {
     setLoggingOut(true);
@@ -162,199 +307,73 @@ function App() {
         throw new Error('Logout failed');
       }
 
+      setActivePage('home');
       setAuth({ status: 'anonymous' });
     } catch {
-      setAuth({ status: 'error' });
+      // La sesión sigue abierta: se avisa y la persona sigue donde estaba.
+      toast({
+        tone: 'danger',
+        title: 'No pudimos cerrar la sesión',
+        description: 'Revisa tu conexión e inténtalo de nuevo.',
+      });
     } finally {
       setLoggingOut(false);
     }
   }
 
-  if (auth.status === 'loading') {
-    return (
-      <main className="center-screen">
-        <div>
-          <div className="loader" />
-          <p className="muted">Cargando WebClass…</p>
-        </div>
-      </main>
-    );
-  }
-
-  if (auth.status === 'anonymous') {
-    return (
-      <main className="auth-page">
-        <section className="auth-card">
-          <div className="brand-mark">W</div>
-
-          <p className="eyebrow">WebClass</p>
-
-          <h1>Tu aula, conectada con GitHub.</h1>
-
-          <p className="auth-description">
-            Gestiona cursos, entregas y repositorios desde un
-            solo lugar.
-          </p>
-
-          <a
-            className="github-button"
-            href="/auth/github"
-          >
-            <GitHubIcon />
-            Continuar con GitHub
-          </a>
-
-          <p className="auth-note">
-            GitHub autentica tu cuenta. Los permisos académicos
-            se gestionan de forma independiente en WebClass.
-          </p>
-        </section>
-      </main>
-    );
-  }
-
-  if (auth.status === 'error') {
-    return (
-      <main className="center-screen">
-        <div className="error-card">
-          <p className="eyebrow">WebClass</p>
-          <h1>No pudimos cargar tu sesión.</h1>
-
-          <p className="muted">
-            Comprueba que la API esté ejecutándose e inténtalo
-            nuevamente.
-          </p>
-
-          <button
-            type="button"
-            onClick={() => window.location.reload()}
-          >
-            Reintentar
-          </button>
-        </div>
-      </main>
-    );
+  switch (auth.status) {
+    case 'loading':
+      return <LoadingScreen />;
+    case 'anonymous':
+      return <LoginScreen />;
+    case 'expired':
+      return <SessionExpiredScreen />;
+    case 'error':
+      return (
+        <ServerErrorScreen kind={auth.kind} code={auth.code} retrying={checking} onRetry={checkAgain} />
+      );
+    case 'authenticated':
+      break;
   }
 
   const { user } = auth;
-  const institution = user.institutions[0];
-  const accessRequest = user.accessRequest;
+  const view = accessViewFor(user);
+  const login = user.github.login;
 
-  if (!institution && accessRequest?.status === 'PENDING') {
-    return (
-      <main className="center-screen">
-        <div className="error-card">
-          <p className="eyebrow">WebClass</p>
-          <h1>Solicitud pendiente</h1>
-
-          <p className="muted">
-            Tu cuenta de GitHub está autenticada. Tu solicitud
-            para ingresar a {accessRequest.institution.name}{' '}
-            está esperando la aprobación de un administrador.
-          </p>
-
-          <span className="status-pill pending">
-            Pendiente de aprobación
-          </span>
-
-          <div>
-            <button
-              type="button"
-              className="logout-button"
-              onClick={logout}
-              disabled={loggingOut}
-            >
-              {loggingOut
-                ? 'Cerrando sesión…'
-                : 'Cerrar sesión'}
-            </button>
-          </div>
-        </div>
-      </main>
-    );
+  switch (view.kind) {
+    case 'pending':
+      return (
+        <PendingAccessScreen
+          request={view.request}
+          login={login}
+          checking={checking}
+          onCheckAgain={checkAgain}
+          onLogout={logout}
+          loggingOut={loggingOut}
+        />
+      );
+    case 'denied':
+      return (
+        <DeniedAccessScreen request={view.request} login={login} onLogout={logout} loggingOut={loggingOut} />
+      );
+    case 'no-institution':
+      return <NoInstitutionScreen login={login} onLogout={logout} loggingOut={loggingOut} />;
+    case 'role-unavailable':
+      return (
+        <RoleUnavailableScreen
+          institution={view.institution}
+          login={login}
+          onLogout={logout}
+          loggingOut={loggingOut}
+        />
+      );
+    case 'app':
+      break;
   }
 
-  if (!institution && accessRequest?.status === 'DENIED') {
-    return (
-      <main className="center-screen">
-        <div className="error-card">
-          <p className="eyebrow">WebClass</p>
-          <h1>Acceso no autorizado</h1>
+  const { institution } = view;
 
-          <p className="muted">
-            Tu solicitud para ingresar a{' '}
-            {accessRequest.institution.name} fue denegada.
-          </p>
-
-          <button
-            type="button"
-            className="logout-button"
-            onClick={logout}
-            disabled={loggingOut}
-          >
-            {loggingOut
-              ? 'Cerrando sesión…'
-              : 'Cerrar sesión'}
-          </button>
-        </div>
-      </main>
-    );
-  }
-
-  if (!institution) {
-    return (
-      <main className="center-screen">
-        <div className="error-card">
-          <p className="eyebrow">WebClass</p>
-          <h1>Cuenta sin institución</h1>
-
-          <p className="muted">
-            Tu cuenta está autenticada, pero no tiene una
-            institución ni una solicitud de acceso asociada.
-          </p>
-
-          <button
-            type="button"
-            className="logout-button"
-            onClick={logout}
-            disabled={loggingOut}
-          >
-            {loggingOut
-              ? 'Cerrando sesión…'
-              : 'Cerrar sesión'}
-          </button>
-        </div>
-      </main>
-    );
-  }
-
-  if (!institution.roles.includes('ADMIN')) {
-    return (
-      <main className="center-screen">
-        <div className="error-card">
-          <p className="eyebrow">WebClass</p>
-          <h1>Perfil académico registrado</h1>
-
-          <p className="muted">
-            Esta cuenta pertenece a {institution.name}, pero la
-            interfaz para su rol todavía no está habilitada en
-            esta etapa del desarrollo.
-          </p>
-
-          <button
-            type="button"
-            className="logout-button"
-            onClick={logout}
-            disabled={loggingOut}
-          >
-            {loggingOut
-              ? 'Cerrando sesión…'
-              : 'Cerrar sesión'}
-          </button>
-        </div>
-      </main>
-    );
-  }
+  // (Se precarga una sola vez por sesión; ver PrefetchOnce.)
 
   function renderAdminPage() {
     switch (activePage) {
@@ -384,21 +403,52 @@ function App() {
           />
         );
 
+      case 'appearance':
+        return <AppearancePage />;
+
+      case 'profile':
+        return (
+          <ProfilePage
+            user={user}
+            activeInstitutionId={institution.id}
+            onOpenAppearance={() => setActivePage('appearance')}
+            onLogout={logout}
+            loggingOut={loggingOut}
+          />
+        );
+
+      case 'components':
+        if (ComponentCatalogPage) {
+          return (
+            <Suspense fallback={<Spinner size="lg" label="Cargando catálogo…" />}>
+              <ComponentCatalogPage />
+            </Suspense>
+          );
+        }
+        return null;
+
       case 'institution':
         return (
-          <EmptyAdminPage
+          <UpcomingSectionPage
             title="Institución"
-            description="Consulta y administra la configuración institucional."
+            description={`Configuración de ${institution.name}.`}
+            upcoming="Aquí vas a poder consultar y editar el nombre, la descripción y los dominios autorizados de la institución."
           />
         );
 
       case 'home':
       default:
         return (
-          <AdminHomePage
-            institutionName={institution.name}
-            githubLogin={user.github.login}
-          />
+          <>
+            <WelcomePanel
+              firstName={user.academicIdentity?.displayName?.split(' ')[0] || user.github.login}
+              onOpenAppearance={() => setActivePage('appearance')}
+            />
+            <AdminHomePage
+              institutionName={institution.name}
+              githubLogin={user.github.login}
+            />
+          </>
         );
     }
   }
@@ -414,15 +464,21 @@ function App() {
       loggingOut={loggingOut}
       onLogout={logout}
     >
-      {renderAdminPage()}
+      <PrefetchOnce />
+      <Suspense fallback={<PageFallback />}>{renderAdminPage()}</Suspense>
     </AppShell>
   );
 }
+
+// Base y secundario se aplican antes del primer render, también en el login.
+initAppearance();
 
 createRoot(
   document.getElementById('root')!,
 ).render(
   <StrictMode>
-    <App />
+    <ToastProvider>
+      <App />
+    </ToastProvider>
   </StrictMode>,
 );
