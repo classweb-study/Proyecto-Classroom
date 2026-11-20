@@ -61,24 +61,46 @@ const request = (status, extra = {}) => ({
   id: 'r1',
   institution: { id: 'i1', name: 'Universidad de Ejemplo', slug: 'ejemplo' },
   status,
+  requestedRole: 'STUDENT',
   assignedRole: null,
+  decisionReason: null,
+  fullName: 'Ana Pérez',
+  contactEmail: 'ana@example.com',
+  institutionalEmail: null,
+  institutionalCode: null,
+  requestReason: 'Curso de Desarrollo',
+  messageCount: 0,
+  createdAt: '2026-11-01T10:00:00.000Z',
+  decidedAt: null,
   ...extra,
 });
-const admin = { ...baseUser, institutions: [institution('i1', 'Universidad de Ejemplo', ['ADMIN'])] };
+const withRole = role => ({ ...baseUser, institutions: [institution('i1', 'Universidad de Ejemplo', [role])] });
+const admin = withRole('ADMIN');
+
+/* Respuestas de la API. Las solicitudes viven en /me/access-requests, no dentro de /me. */
+const course = {
+  id: 'c1', institutionId: 'i1', name: 'Desarrollo Web', code: 'DW-01', description: null, status: 'ACTIVE',
+  viewerRole: 'STUDENT', studentCount: 32, activityCount: 5, createdAt: '2026-08-01T10:00:00.000Z',
+};
+const activity = { activityId: 'a1', courseId: 'c1', courseName: 'Desarrollo Web', title: 'Entrega 1', dueAt: '2026-11-28T23:59:00.000Z' };
+const DASHBOARDS = {
+  STUDENT: { courses: [course], upcoming: [activity], overdue: [], recentFeedback: [] },
+  TEACHER: { courses: [{ ...course, viewerRole: 'TEACHER' }], toReview: [{ ...activity, pending: 3 }], upcoming: [activity], missingAfterDue: [] },
+};
 
 const SCENARIOS = [
   { name: 'login', me: { status: 401 }, expect: 'Tu aula, conectada con GitHub.' },
   { name: 'login-error-oauth', me: { status: 401 }, path: '/?auth_error=GITHUB_AUTHORIZATION_FAILED', expect: 'No se completó el permiso en GitHub' },
   { name: 'sin-conexion', me: 'abort', expect: 'No pudimos cargar tu sesión.' },
   { name: 'error-servidor', me: { status: 503 }, expect: 'WebClass tiene un problema en este momento' },
-  { name: 'pendiente', me: { user: { ...baseUser, accessRequest: request('PENDING') } }, expect: 'Tu solicitud está en revisión' },
-  { name: 'rechazada', me: { user: { ...baseUser, accessRequest: request('DENIED', { decisionReason: 'No apareces en la lista.' }) } }, expect: 'No apareces en la lista.' },
-  { name: 'sin-institucion', me: { user: baseUser }, expect: 'Tu cuenta todavía no pertenece a una institución' },
-  { name: 'estudiante', me: { user: { ...baseUser, institutions: [institution('i1', 'Universidad de Ejemplo', ['STUDENT'])] } }, expect: 'Tu espacio todavía no está listo' },
-  { name: 'admin-inicio', me: { user: admin }, expect: 'Hola, ana-dev' },
+  { name: 'sin-institucion', me: { user: baseUser }, requests: [], expect: 'Acceso a tu institución' },
+  { name: 'pendiente', me: { user: baseUser }, requests: [request('PENDING')], expect: 'Pendiente' },
+  { name: 'rechazada', me: { user: baseUser }, requests: [request('DENIED', { decisionReason: 'No apareces en la lista.', decidedAt: '2026-11-02T10:00:00.000Z' })], expect: 'No apareces en la lista.' },
+  { name: 'estudiante-inicio', me: { user: withRole('STUDENT') }, expect: 'Tus materias y entregas', sections: ['Cursos', 'Mi perfil', 'Mis solicitudes', 'Apariencia'] },
+  { name: 'profesor-inicio', me: { user: withRole('TEACHER') }, expect: 'Tus cursos y trabajos por revisar', sections: ['Cursos', 'Mi perfil', 'Mis solicitudes', 'Apariencia'] },
+  { name: 'admin-inicio', me: { user: admin }, expect: 'Hola, ana-dev', sections: ['Solicitudes', 'Profesores', 'Estudiantes', 'Institución', 'Mi perfil', 'Apariencia'] },
 ];
 
-const APP_SECTIONS = ['Usuarios', 'Profesores', 'Estudiantes', 'Institución', 'Mi perfil', 'Apariencia'];
 const WIDTHS = [1280, 900, 390];
 const APPEARANCES = [
   { theme: 'light', accent: 'green' },
@@ -93,7 +115,7 @@ let checks = 0;
 
 const browser = await chromium.launch(args.chrome ? { executablePath: args.chrome } : {});
 
-async function openPage({ width, appearance, me, path = '/' }) {
+async function openPage({ width, appearance, me, requests = [], path = '/' }) {
   const context = await browser.newContext({ viewport: { width, height: 820 } });
   const page = await context.newPage();
   const errors = [];
@@ -112,7 +134,19 @@ async function openPage({ width, appearance, me, path = '/' }) {
     if (me.status) return route.fulfill({ status: me.status, body: '{}' });
     return route.fulfill({ json: { user: me.user } });
   });
-  await page.route('**/admin/**', route => route.fulfill({ json: { requests: [], members: [] } }));
+  await page.route('**/me/access-requests', route => route.fulfill({ json: { requests } }));
+  await page.route('**/me/dashboard?*', route => {
+    const role = new URL(route.request().url()).searchParams.get('role');
+    return route.fulfill({ json: { dashboard: DASHBOARDS[role] ?? DASHBOARDS.STUDENT } });
+  });
+  await page.route('**/me/profile', route => route.fulfill({ json: { profile: { displayName: 'Ana Pérez', contactEmail: 'ana@example.com', notifyDeadlines: true, notifyFeedback: true } } }));
+  await page.route('**/courses?*', route => route.fulfill({ json: { courses: [course] } }));
+  await page.route('**/admin/**', route => route.fulfill({ json: { requests: [], members: [], entries: [] } }));
+  await page.route('**/admin/institutions/i1', route => route.fulfill({ json: {
+    institution: { id: 'i1', name: 'Universidad de Ejemplo', slug: 'ejemplo', description: null, logoUrl: null, accentColor: null },
+    counts: { teachers: 4, students: 38, pendingRequests: 2, courses: 6 },
+    domains: [{ id: 'd1', domain: 'ejemplo.edu.co' }],
+  } }));
 
   await page.goto(new URL(path, BASE_URL).toString());
   await page.waitForTimeout(500);
@@ -155,17 +189,16 @@ for (const appearance of APPEARANCES) {
 
   for (const width of WIDTHS) {
     for (const scenario of SCENARIOS) {
-      const { context, page, errors } = await openPage({ width, appearance, me: scenario.me, path: scenario.path });
+      const { context, page, errors } = await openPage({ width, appearance, me: scenario.me, requests: scenario.requests, path: scenario.path });
       const label = `${scenario.name}-${width}-${tag}`;
       const found = await page.getByText(scenario.expect, { exact: false }).first().isVisible().catch(() => false);
       if (!found) problems.push(`${label}: no aparece «${scenario.expect}»`);
       await inspect(page, errors, label);
 
-      if (scenario.name === 'admin-inicio') {
-        for (const section of APP_SECTIONS) {
-          await goToSection(page, width, section);
-          await inspect(page, errors, `${section.toLowerCase().replace(/\s+/g, '-')}-${width}-${tag}`);
-        }
+      const role = scenario.name.split('-')[0];
+      for (const section of scenario.sections ?? []) {
+        await goToSection(page, width, section);
+        await inspect(page, errors, `${role}-${section.toLowerCase().replace(/\s+/g, '-')}-${width}-${tag}`);
       }
       await context.close();
     }
