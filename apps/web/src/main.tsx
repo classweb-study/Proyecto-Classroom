@@ -1,7 +1,10 @@
 import {
   StrictMode,
+  Suspense,
+  lazy,
   useCallback,
   useEffect,
+  useRef,
   useState,
 } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -11,18 +14,45 @@ import {
   type AppPage,
   type ViewRole,
 } from './components/AppShell';
+import { GitHubIcon } from './components/icons';
+import { Alert, Spinner, ToastProvider, useToast } from './components/ui';
+import { canOpen } from './navigation/sections';
+import { WelcomePanel } from './onboarding/WelcomePanel';
 import { AdminHomePage } from './pages/AdminHomePage';
 import { AdminUsersPage } from './pages/AdminUsersPage';
 import { AdminMembersPage } from './pages/AdminMembersPage';
 import { AccessRequestsPage } from './pages/AccessRequestsPage';
 import { AdminInstitutionPage } from './pages/AdminInstitutionPage';
+import { AppearancePage } from './pages/AppearancePage';
 import { CoursesSection } from './pages/CoursesPage';
 import { StudentHomePage, TeacherHomePage } from './pages/HomeDashboards';
 import { PlatformPage } from './pages/PlatformPage';
 import { ProfilePage } from './pages/ProfilePage';
+import {
+  LoadingScreen,
+  ServerErrorScreen,
+  SessionExpiredScreen,
+} from './pages/status/StatusScreens';
+import { readAuthError, withoutAuthError } from './session/auth-errors';
+import { onSessionExpired } from './session/session-events';
+import { classifyMeResponse, isExpiredSession } from './session/session-state';
+import { initAppearance } from './theme/appearance-store';
 import type { Navigate } from './lib/api';
 
+import './styles/tokens.css';
 import './style.css';
+import './styles/components.css';
+// Va al final: traduce los nombres viejos (--vmat-*) a los tokens.
+import './styles/compat.css';
+
+// Solo en desarrollo: en el build de producción esta rama desaparece.
+const ComponentCatalogPage = import.meta.env.DEV
+  ? lazy(() =>
+      import('./pages/ComponentCatalogPage').then(module => ({
+        default: module.ComponentCatalogPage,
+      })),
+    )
+  : null;
 
 const ACTIVE_INSTITUTION_KEY = 'vmat-active-institution';
 const VIEW_ROLE_KEY = 'vmat-view-role';
@@ -78,7 +108,8 @@ type AuthState =
   | { status: 'loading' }
   | { status: 'anonymous' }
   | { status: 'authenticated'; user: CurrentUser }
-  | { status: 'error' };
+  | { status: 'expired' }
+  | { status: 'error'; kind: 'server' | 'network'; code: number | null };
 
 type View = {
   page: AppPage;
@@ -88,30 +119,71 @@ type View = {
 
 const ROLE_PRIORITY: ViewRole[] = ['ADMIN', 'TEACHER', 'STUDENT'];
 
-const PAGES_BY_ROLE: Record<ViewRole, AppPage[]> = {
-  ADMIN: ['home', 'users', 'teachers', 'students', 'institution'],
-  TEACHER: ['home', 'courses'],
-  STUDENT: ['home', 'courses'],
-};
+/* Cada cuánto, como mínimo, se revisa la sesión al volver a la pestaña. */
+const SESSION_RECHECK_MS = 60_000;
 
-const COMMON_PAGES: AppPage[] = ['profile', 'requests', 'platform'];
+function LoginScreen() {
+  const [authError] = useState(() => readAuthError(window.location.search));
+  const [redirecting, setRedirecting] = useState(false);
 
-function GitHubIcon() {
+  useEffect(() => {
+    document.title = 'Iniciar sesión · WebClass';
+    // Se quita ?auth_error= de la URL para que recargar no repita el aviso.
+    if (authError) {
+      const { pathname, search, hash } = window.location;
+      window.history.replaceState(null, '', `${pathname}${withoutAuthError(search)}${hash}`);
+    }
+  }, [authError]);
+
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        fill="currentColor"
-        d="M12 .7a11.5 11.5 0 0 0-3.64 22.4c.58.1.79-.25.79-.56v-2.2c-3.22.7-3.9-1.37-3.9-1.37-.52-1.34-1.29-1.7-1.29-1.7-1.05-.72.08-.7.08-.7 1.17.08 1.78 1.2 1.78 1.2 1.04 1.77 2.72 1.26 3.38.96.1-.75.4-1.26.74-1.55-2.57-.29-5.27-1.28-5.27-5.69 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.16 1.18a10.9 10.9 0 0 1 5.76 0c2.2-1.49 3.16-1.18 3.16-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.42-2.71 5.39-5.29 5.68.42.36.79 1.07.79 2.16v3.2c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .7Z"
-      />
-    </svg>
+    <main className="auth-page">
+      <section className="auth-card">
+        <div className="brand-mark" aria-hidden="true">
+          W
+        </div>
+
+        <p className="eyebrow">WebClass</p>
+
+        <h1>Tu aula, conectada con GitHub.</h1>
+
+        <p className="auth-description">
+          Gestiona cursos, entregas y repositorios desde un solo lugar.
+        </p>
+
+        {authError && (
+          <div className="auth-error">
+            <Alert tone="danger" title={authError.title}>
+              {authError.body}
+            </Alert>
+          </div>
+        )}
+
+        <a
+          className="github-button"
+          href="/auth/github"
+          aria-busy={redirecting || undefined}
+          onClick={() => setRedirecting(true)}
+        >
+          <GitHubIcon />
+          Continuar con GitHub
+        </a>
+        <p className="auth-redirecting" role="status">
+          {redirecting ? 'Abriendo GitHub…' : ''}
+        </p>
+
+        <p className="auth-note">
+          GitHub solo confirma quién eres. Qué puedes hacer en cada institución lo decide su
+          administración dentro de WebClass.
+        </p>
+      </section>
+    </main>
   );
 }
 
 function App() {
-  const [auth, setAuth] = useState<AuthState>({
-    status: 'loading',
-  });
-
+  const toast = useToast();
+  const [auth, setAuth] = useState<AuthState>({ status: 'loading' });
+  const [checking, setChecking] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [view, setView] = useState<View>({ page: 'home' });
   const [activeInstitutionId, setActiveInstitutionId] =
@@ -120,6 +192,10 @@ function App() {
     readStored(VIEW_ROLE_KEY),
   );
   const [platformOnly, setPlatformOnly] = useState(false);
+
+  const authRef = useRef(auth);
+  authRef.current = auth;
+  const lastCheck = useRef(0);
 
   function switchInstitution(institutionId: string) {
     // Switching never carries course or request ids across institutions.
@@ -143,47 +219,85 @@ function App() {
     window.scrollTo({ top: 0 });
   };
 
-  const loadSession = useCallback((signal?: AbortSignal) => {
-    return fetch('/me', {
-      credentials: 'same-origin',
-      signal,
-    })
-      .then(async response => {
-        if (response.status === 401) {
-          setAuth({ status: 'anonymous' });
-          return;
-        }
+  /*
+   * Pide /me y decide el estado. `background` = revisión silenciosa
+   * (al volver a la pestaña): si falla la red no se saca a la persona
+   * de lo que estaba haciendo, solo se detecta la sesión vencida.
+   */
+  const loadSession = useCallback(
+    async (options: { background?: boolean; signal?: AbortSignal } = {}) => {
+      const wasAuthenticated = authRef.current.status === 'authenticated';
+      lastCheck.current = Date.now();
 
-        if (!response.ok) {
-          throw new Error('Unable to load session');
-        }
+      let response: Response;
+      try {
+        response = await fetch('/me', { credentials: 'same-origin', signal: options.signal });
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        if (!options.background) setAuth({ status: 'error', kind: 'network', code: null });
+        return;
+      }
 
-        const body = (await response.json()) as {
-          user: CurrentUser;
-        };
+      const outcome = classifyMeResponse(response.status);
 
-        setAuth({
-          status: 'authenticated',
-          user: body.user,
-        });
-      })
-      .catch(error => {
-        if (
-          error instanceof DOMException &&
-          error.name === 'AbortError'
-        ) {
-          return;
-        }
+      if (outcome === 'anonymous') {
+        setAuth(isExpiredSession(wasAuthenticated, outcome) ? { status: 'expired' } : { status: 'anonymous' });
+        return;
+      }
 
-        setAuth({ status: 'error' });
-      });
-  }, []);
+      if (outcome === 'server-error') {
+        if (!options.background) setAuth({ status: 'error', kind: 'server', code: response.status });
+        return;
+      }
+
+      try {
+        const body = (await response.json()) as { user: CurrentUser };
+        setAuth({ status: 'authenticated', user: body.user });
+      } catch {
+        if (!options.background) setAuth({ status: 'error', kind: 'server', code: response.status });
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     const controller = new AbortController();
-    void loadSession(controller.signal);
+    void loadSession({ signal: controller.signal });
     return () => controller.abort();
   }, [loadSession]);
+
+  // Al volver a la pestaña se revisa la sesión: así se detecta si venció
+  // y una solicitud que ya fue aprobada aparece sola.
+  useEffect(() => {
+    function recheck() {
+      if (document.visibilityState !== 'visible') return;
+      if (authRef.current.status !== 'authenticated') return;
+      if (Date.now() - lastCheck.current < SESSION_RECHECK_MS) return;
+      void loadSession({ background: true });
+    }
+
+    document.addEventListener('visibilitychange', recheck);
+    window.addEventListener('focus', recheck);
+    return () => {
+      document.removeEventListener('visibilitychange', recheck);
+      window.removeEventListener('focus', recheck);
+    };
+  }, [loadSession]);
+
+  // Cualquier pantalla puede avisar que el servidor respondió 401.
+  useEffect(
+    () =>
+      onSessionExpired(() => {
+        if (authRef.current.status === 'authenticated') setAuth({ status: 'expired' });
+      }),
+    [],
+  );
+
+  async function checkAgain() {
+    setChecking(true);
+    await loadSession();
+    setChecking(false);
+  }
 
   async function logout() {
     setLoggingOut(true);
@@ -198,78 +312,33 @@ function App() {
         throw new Error('Logout failed');
       }
 
+      setView({ page: 'home' });
       setAuth({ status: 'anonymous' });
     } catch {
-      setAuth({ status: 'error' });
+      // La sesión sigue abierta: se avisa y la persona sigue donde estaba.
+      toast({
+        tone: 'danger',
+        title: 'No pudimos cerrar la sesión',
+        description: 'Revisa tu conexión e inténtalo de nuevo.',
+      });
     } finally {
       setLoggingOut(false);
     }
   }
 
-  if (auth.status === 'loading') {
-    return (
-      <main className="center-screen">
-        <div>
-          <div className="loader" />
-          <p className="muted">Cargando WebClass…</p>
-        </div>
-      </main>
-    );
-  }
-
-  if (auth.status === 'anonymous') {
-    return (
-      <main className="auth-page">
-        <section className="auth-card">
-          <div className="brand-mark">W</div>
-
-          <p className="eyebrow">WebClass</p>
-
-          <h1>Tu aula, conectada con GitHub.</h1>
-
-          <p className="auth-description">
-            Gestiona cursos, entregas y repositorios desde un
-            solo lugar.
-          </p>
-
-          <a
-            className="github-button"
-            href="/auth/github"
-          >
-            <GitHubIcon />
-            Continuar con GitHub
-          </a>
-
-          <p className="auth-note">
-            GitHub autentica tu cuenta. Los permisos académicos
-            se gestionan de forma independiente en WebClass.
-          </p>
-        </section>
-      </main>
-    );
-  }
-
-  if (auth.status === 'error') {
-    return (
-      <main className="center-screen">
-        <div className="error-card">
-          <p className="eyebrow">WebClass</p>
-          <h1>No pudimos cargar tu sesión.</h1>
-
-          <p className="muted">
-            Comprueba que la API esté ejecutándose e inténtalo
-            nuevamente.
-          </p>
-
-          <button
-            type="button"
-            onClick={() => window.location.reload()}
-          >
-            Reintentar
-          </button>
-        </div>
-      </main>
-    );
+  switch (auth.status) {
+    case 'loading':
+      return <LoadingScreen />;
+    case 'anonymous':
+      return <LoginScreen />;
+    case 'expired':
+      return <SessionExpiredScreen />;
+    case 'error':
+      return (
+        <ServerErrorScreen kind={auth.kind} code={auth.code} retrying={checking} onRetry={checkAgain} />
+      );
+    case 'authenticated':
+      break;
   }
 
   const { user } = auth;
@@ -318,12 +387,11 @@ function App() {
     'STUDENT';
 
   // A page from another role (e.g. after switching) falls back to home.
-  const page: AppPage =
-    PAGES_BY_ROLE[viewRole].includes(view.page) ||
-    (COMMON_PAGES.includes(view.page) &&
-      (view.page !== 'platform' || isPlatformAdmin))
-      ? view.page
-      : 'home';
+  const page: AppPage = canOpen(view.page, viewRole, isPlatformAdmin, import.meta.env.DEV)
+    ? view.page
+    : 'home';
+
+  const firstName = user.academicIdentity?.displayName?.split(' ')[0] || user.github.login;
 
   function renderPage() {
     switch (page) {
@@ -347,8 +415,21 @@ function App() {
           />
         );
 
+      case 'appearance':
+        return <AppearancePage />;
+
       case 'platform':
         return <PlatformPage onChanged={() => void loadSession()} />;
+
+      case 'components':
+        if (ComponentCatalogPage) {
+          return (
+            <Suspense fallback={<Spinner size="lg" label="Cargando catálogo…" />}>
+              <ComponentCatalogPage />
+            </Suspense>
+          );
+        }
+        return null;
 
       case 'courses':
         return (
@@ -400,28 +481,32 @@ function App() {
 
       case 'home':
       default:
-        if (viewRole === 'ADMIN') {
-          return (
-            <AdminHomePage
-              institutionId={institution.id}
-              institutionName={institution.name}
-              onOpenRequests={() => navigate({ page: 'users' })}
+        return (
+          <>
+            <WelcomePanel
+              firstName={firstName}
+              onOpenAppearance={() => navigate({ page: 'appearance' })}
             />
-          );
-        }
-
-        return viewRole === 'TEACHER' ? (
-          <TeacherHomePage
-            institutionId={institution.id}
-            institutionName={institution.name}
-            navigate={navigate}
-          />
-        ) : (
-          <StudentHomePage
-            institutionId={institution.id}
-            institutionName={institution.name}
-            navigate={navigate}
-          />
+            {viewRole === 'ADMIN' ? (
+              <AdminHomePage
+                institutionId={institution.id}
+                institutionName={institution.name}
+                onOpenRequests={() => navigate({ page: 'users' })}
+              />
+            ) : viewRole === 'TEACHER' ? (
+              <TeacherHomePage
+                institutionId={institution.id}
+                institutionName={institution.name}
+                navigate={navigate}
+              />
+            ) : (
+              <StudentHomePage
+                institutionId={institution.id}
+                institutionName={institution.name}
+                navigate={navigate}
+              />
+            )}
+          </>
         );
     }
   }
@@ -450,10 +535,15 @@ function App() {
   );
 }
 
+// Base y secundario se aplican antes del primer render, también en el login.
+initAppearance();
+
 createRoot(
   document.getElementById('root')!,
 ).render(
   <StrictMode>
-    <App />
+    <ToastProvider>
+      <App />
+    </ToastProvider>
   </StrictMode>,
 );

@@ -1,0 +1,106 @@
+/*
+ * VMAT · compatibilidad con estilos anteriores a los tokens
+ *
+ * Las ramas que salieron de main antes de la tarea 3 (por ejemplo
+ * feat/maura-access-requests y feat/maura-admin-institution) usan las
+ * variables viejas --vmat-* y algunas clases que ya no existen. Este
+ * archivo las define a partir de los tokens para que esas pantallas se
+ * vean bien después del merge y, de paso, sigan la base y el secundario
+ * que elija cada persona.
+ *
+ * No escribir estilos nuevos con estos nombres. Cuando todo el CSS use
+ * tokens, este archivo se puede borrar.
+ */
+
+:root,
+[data-theme],
+[data-accent] {
+  --vmat-bg: var(--color-bg);
+  --vmat-surface: var(--color-surface);
+  --vmat-surface-soft: var(--color-hover);
+  --vmat-surface-muted: var(--color-surface-sunken);
+  --vmat-border: var(--color-border);
+  --vmat-border-soft: var(--color-border-subtle);
+  --vmat-text: var(--color-text);
+  --vmat-text-strong: var(--color-text-strong);
+  --vmat-text-muted: var(--color-text-muted);
+  --vmat-text-faint: var(--color-text-subtle);
+  --vmat-topbar: var(--color-topbar);
+  --vmat-shadow: rgb(var(--shadow-color) / 0.1);
+
+  /* "green" era el acento: ahora es el secundario que elija la persona. */
+  --vmat-green: var(--accent-solid);
+  --vmat-green-hover: var(--accent-solid-hover);
+  --vmat-green-soft: var(--accent-soft);
+  --vmat-green-soft-2: var(--accent-soft);
+  --vmat-green-text: var(--accent-text);
+
+  --vmat-danger-bg: var(--danger-bg);
+  --vmat-danger-surface: var(--danger-bg);
+  --vmat-danger-border: var(--danger-border);
+  --vmat-danger-text: var(--danger-text);
+  --vmat-warning-bg: var(--warning-bg);
+  --vmat-warning-text: var(--warning-text);
+
+  --vmat-auth-bg:
+    radial-gradient(
+      circle at 20% 20%,
+      color-mix(in srgb, var(--accent-solid) 12%, transparent),
+      transparent 32rem
+    ),
+    radial-gradient(
+      circle at 85% 85%,
+      color-mix(in srgb, var(--accent-solid) 8%, transparent),
+      transparent 28rem
+    ),
+    var(--color-bg);
+}
+
+/*
+ * Botón principal de esas ramas: llevaba texto blanco fijo sobre el verde.
+ * En las bases oscuras el secundario es claro y el blanco no se lee
+ * (2,6:1), así que el texto toma el color pensado para ese fondo.
+ */
+.primary-action,
+.primary-action:hover:not(:disabled) {
+  color: var(--accent-on-solid);
+}
+
+/* Tarjeta de error de la versión anterior (la usa main.tsx en esas ramas). */
+.error-card {
+  width: min(100%, 520px);
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
+  padding: var(--space-10);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-xl);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-lg);
+}
+
+.error-card h1 {
+  margin: 0;
+  font-size: var(--text-2xl);
+}
+
+.error-card .muted {
+  margin: 0;
+}
+
+.error-card button:not(.logout-button) {
+  min-height: var(--control-md);
+  padding: 0 var(--space-4);
+  border: var(--border-width) solid var(--accent-solid);
+  border-radius: var(--radius-md);
+  background: var(--accent-solid);
+  color: var(--accent-on-solid);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+
+@media (max-width: 620px) {
+  .error-card {
+    padding: var(--space-8) var(--space-6);
+  }
+}
