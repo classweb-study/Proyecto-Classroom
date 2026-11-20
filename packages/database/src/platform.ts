@@ -1,3 +1,4 @@
+import { isRoleConflict } from './role-conflict.js';
 import type { Pool, PoolClient } from 'pg';
 
 /*
@@ -38,11 +39,12 @@ async function transaction<T>(
     const result = await work(client);
     await client.query('COMMIT');
     return result;
-  } catch {
+  } catch (error) {
     if (client) {
       await rollback(client);
     }
 
+    if (isRoleConflict(error)) throw new Error('ROLE_CONFLICT');
     throw new Error('PLATFORM_STORAGE_UNAVAILABLE');
   } finally {
     client?.release();
@@ -140,6 +142,12 @@ export function createPlatformRepository(pool: Pool) {
         const row = decision.rows[0];
         if (!row) return false;
         if (approve) {
+          // Approval by the owner replaces the local academic role atomically.
+          await client.query(
+            `UPDATE institution_memberships SET status='REVOKED', updated_at=now()
+              WHERE institution_id=$1 AND user_id=$2 AND status='ACTIVE' AND role<>'ADMIN'`,
+            [row.institution_id, row.user_id],
+          );
           await client.query(
             `INSERT INTO institution_memberships(institution_id,user_id,role) VALUES ($1,$2,'ADMIN')
              ON CONFLICT (user_id,institution_id,role) DO UPDATE SET status='ACTIVE',updated_at=now()`,

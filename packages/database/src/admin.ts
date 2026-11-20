@@ -1,3 +1,4 @@
+import { isRoleConflict } from './role-conflict.js';
 import type { Pool, PoolClient } from 'pg';
 
 export type AssignableInstitutionRole =
@@ -160,11 +161,12 @@ async function asInstitutionAdmin<T>(
     const result = await work(client);
     await client.query('COMMIT');
     return result;
-  } catch {
+  } catch (error) {
     if (client) {
       await rollback(client);
     }
 
+    if (isRoleConflict(error)) throw new Error('ROLE_CONFLICT');
     throw new Error('ADMIN_STORAGE_UNAVAILABLE');
   } finally {
     client?.release();
@@ -607,11 +609,12 @@ export function createAdminRepository(pool: Pool) {
           githubLogin: row.login,
           role: input.role,
         };
-      } catch {
+      } catch (error) {
         if (client) {
           await rollback(client);
         }
 
+        if (isRoleConflict(error)) throw new Error('ROLE_CONFLICT');
         throw new Error('ADMIN_STORAGE_UNAVAILABLE');
       } finally {
         client?.release();
