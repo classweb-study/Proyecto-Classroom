@@ -71,6 +71,13 @@
       "when": 1795147357484,
       "tag": "0009_exclusive_account_roles",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1795148062934,
+      "tag": "0010_retirar_instituciones",
+      "breakpoints": true
     }
   ]
 }

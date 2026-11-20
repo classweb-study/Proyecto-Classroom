@@ -89,9 +89,9 @@ export function createInstitutionAccessRepository(pool: Pool) {
           text: `
             SELECT id, name, slug
               FROM institutions
-             WHERE $1 = ''
+             WHERE removed_at IS NULL AND ($1 = ''
                 OR name ILIKE '%' || $1 || '%'
-                OR slug ILIKE '%' || $1 || '%'
+                OR slug ILIKE '%' || $1 || '%')
              ORDER BY name
              LIMIT 20
           `,
@@ -198,7 +198,7 @@ export function createInstitutionAccessRepository(pool: Pool) {
 
         const institution = await client.query({
           name: 'access-institution-exists',
-          text: `SELECT 1 FROM institutions WHERE id = $1`,
+          text: `SELECT 1 FROM institutions WHERE id = $1 AND removed_at IS NULL FOR SHARE`,
           values: [input.institutionId],
         });
 

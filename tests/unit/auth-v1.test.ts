@@ -1105,6 +1105,7 @@ describe('separación de permisos de administración', () => {
     listRequests: vi.fn(async () => []),
     requestAdmin: vi.fn(async () => true),
     decideRequest: vi.fn(async () => true),
+    removeInstitution: vi.fn(async () => true),
     listAdminHistory: vi.fn(async () => []),
   };
 
@@ -1127,6 +1128,7 @@ describe('separación de permisos de administración', () => {
       for (const url of ['/platform/institutions', `/platform/admin-requests/${institution}`]) {
         expect((await app.inject({method:'POST', url, headers, payload:{decision:'APPROVED'}})).statusCode).toBe(403);
       }
+      expect((await app.inject({method:'DELETE', url:`/platform/institutions/${institution}`, headers})).statusCode).toBe(403);
       expect((await app.inject({url:'/platform/admin-history', headers})).statusCode).toBe(403);
     } finally {await app.close();}
   });

@@ -195,6 +195,17 @@ export function PlatformPage({ onChanged }: { onChanged: () => void }) {
                     {formatDate(item.createdAt)}
                   </span>
                 </div>
+                <button type="button" className="deny-button" disabled={busy} onClick={async () => {
+                  if (!window.confirm(`¿Eliminar ${item.name} de WebClass? Sus miembros perderán el acceso y se cancelarán las solicitudes pendientes. Se conservará el historial.`)) return;
+                  setBusy(true);
+                  try {
+                    await api(`/platform/institutions/${item.id}`, {method:'DELETE'});
+                    load();
+                    setMessage({kind:'ok',text:`${item.name} se retiró de WebClass.`});
+                  } catch (error) {
+                    setMessage({kind:'error',text:errorMessage(error,'No pudimos retirar la institución.')});
+                  } finally {setBusy(false);}
+                }}>Eliminar institución</button>
                 <span>Administradores: {item.admins.map(login => '@' + login).join(', ') || 'ninguno'}</span>
               </li>
             ))}

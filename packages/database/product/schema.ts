@@ -137,6 +137,7 @@ export const oauthAttempts = pgTable(
 export const institutions = pgTable(
   'institutions',
   {
+    removedAt: timestamp('removed_at', { withTimezone: true }),
     id: uuid('id').primaryKey().defaultRandom(),
     name: text('name').notNull(),
     slug: text('slug').notNull(),
@@ -391,6 +392,7 @@ export const institutionAuditActionEnum = pgEnum(
     'DOMAIN_ADDED',
     'DOMAIN_REMOVED',
     'INSTITUTION_CREATED',
+    'INSTITUTION_REMOVED',
     'APPLICANT_UPDATED',
     'MEMBERSHIP_RESTORED',
   ],

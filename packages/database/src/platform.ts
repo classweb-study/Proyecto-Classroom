@@ -76,6 +76,7 @@ export function createPlatformRepository(pool: Pool) {
                      WHERE m.institution_id = i.id
                        AND m.status = 'ACTIVE') AS members
               FROM institutions i
+             WHERE i.removed_at IS NULL
              ORDER BY i.name
           `,
         );
@@ -111,10 +112,24 @@ export function createPlatformRepository(pool: Pool) {
       });
     },
 
+    async removeInstitution(actor: string, institutionId: string) {
+      return transaction(pool, async client => {
+        const removed = await client.query(
+          'UPDATE institutions SET removed_at=now() WHERE id=$1 AND removed_at IS NULL RETURNING id', [institutionId],
+        );
+        if (!removed.rowCount) return false;
+        await client.query("UPDATE institution_memberships SET status='REVOKED',updated_at=now() WHERE institution_id=$1 AND status='ACTIVE'", [institutionId]);
+        await client.query("UPDATE institution_access_requests SET status='CANCELLED',updated_at=now() WHERE institution_id=$1 AND status='PENDING'", [institutionId]);
+        await client.query("UPDATE institution_admin_requests SET status='CANCELLED' WHERE institution_id=$1 AND status='PENDING'", [institutionId]);
+        await client.query("INSERT INTO institution_audit_events(institution_id,actor_user_id,action) VALUES ($1,$2,'INSTITUTION_REMOVED')",[institutionId,actor]);
+        return true;
+      });
+    },
+
     async requestAdmin(userId: string, institutionId: string) {
       const result = await pool.query(
         `INSERT INTO institution_admin_requests(user_id,institution_id)
-         SELECT $1,i.id FROM institutions i WHERE i.id=$2 AND NOT EXISTS (
+         SELECT $1,i.id FROM institutions i WHERE i.id=$2 AND i.removed_at IS NULL AND NOT EXISTS (
            SELECT 1 FROM institution_memberships WHERE institution_id=i.id AND user_id=$1 AND role='ADMIN' AND status='ACTIVE'
          ) ON CONFLICT DO NOTHING RETURNING id`, [userId, institutionId],
       );

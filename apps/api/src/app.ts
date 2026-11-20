@@ -1408,6 +1408,13 @@ export function createApp(dependencies?: AppDependencies) {
         .send({ institutionId: result.institutionId });
     });
 
+    app.delete<{Params: {institutionId:string}}>('/platform/institutions/:institutionId', async (request, reply) => {
+      const user = await platformActor(request, reply, ['institutionId']);
+      if (!user) return reply;
+      return await platform.removeInstitution(user.userId, request.params.institutionId)
+        ? {status:'REMOVED'} : reply.code(404).send({error:'NOT_FOUND'});
+    });
+
     app.get('/me/admin-requests', async (request, reply) => {
       const user = await adminRouteActor(request as never, reply, []);
       if (!user) return reply;

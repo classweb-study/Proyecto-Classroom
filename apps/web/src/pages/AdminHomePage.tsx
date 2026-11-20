@@ -52,6 +52,7 @@ export function describe(entry: AuditEntry): string {
       return `${actor} canceló su solicitud`;
     case 'MEMBERSHIP_REVOKED':
       return `${actor} revocó el acceso de ${target}`;
+    case 'INSTITUTION_REMOVED': return `${actor} retiró la institución de WebClass`;
     case 'INSTITUTION_CREATED':
       return `${actor} registró la institución`;
     case 'APPLICANT_UPDATED': return `${actor} actualizó los datos de ${target}`;
