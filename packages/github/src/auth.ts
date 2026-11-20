@@ -15,6 +15,7 @@ export interface GitHubUserIdentity {
 export interface GitHubAuthorizationInput {
   state: string;
   challenge: string;
+  selectAccount?: boolean;
 }
 
 export interface GitHubCodeExchangeInput {
@@ -67,6 +68,7 @@ export function createGitHubAuth(config: GitHubAuthConfig) {
         code_challenge_method: 'S256',
       }).toString();
 
+      if (input.selectAccount) url.searchParams.set('prompt', 'select_account');
       return url.href;
     },
 

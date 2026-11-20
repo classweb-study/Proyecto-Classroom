@@ -1,6 +1,7 @@
 import { randomBytes, createHash } from 'node:crypto';
 
 export const SESSION_COOKIE = 'vmat_session';
+export const ACCOUNT_PICKER_COOKIE = 'webclass_choose_account';
 export const OAUTH_COOKIE = 'vmat_oauth';
 
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;

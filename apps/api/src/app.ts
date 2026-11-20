@@ -22,6 +22,7 @@ import {
   readCookie,
   serializeCookie,
   clearCookie,
+  ACCOUNT_PICKER_COOKIE,
   validState,
   validOAuthCode,
   validOpaqueToken,
@@ -296,7 +297,7 @@ export function createApp(dependencies?: AppDependencies) {
     });
   });
 
-  app.get('/auth/github', async (_request, reply) => {
+  app.get('/auth/github', async (request, reply) => {
     const {
       state,
       binding,
@@ -309,6 +310,7 @@ export function createApp(dependencies?: AppDependencies) {
     const authorizationUrl = githubAuth.createAuthorizationUrl({
       state,
       challenge,
+      selectAccount: readCookie(request.headers.cookie, ACCOUNT_PICKER_COOKIE) === '1',
     });
 
     reply.header(
@@ -411,6 +413,7 @@ export function createApp(dependencies?: AppDependencies) {
 
     reply.header('set-cookie', [
       clearOAuth,
+      clearCookie(ACCOUNT_PICKER_COOKIE, secureCookies, '/auth/github'),
       serializeCookie(SESSION_COOKIE, session.secret, {
         secure: secureCookies,
         path: '/',
@@ -423,6 +426,7 @@ export function createApp(dependencies?: AppDependencies) {
   });
 
   app.get('/me', async (request, reply) => {
+    reply.header('cache-control', 'no-store');
     const secret = readCookie(
       request.headers.cookie,
       SESSION_COOKIE,
@@ -1472,10 +1476,13 @@ export function createApp(dependencies?: AppDependencies) {
       await auth.revokeSession(secret);
     }
 
-    reply.header(
-      'set-cookie',
+    reply.header('set-cookie', [
       clearCookie(SESSION_COOKIE, secureCookies),
-    );
+      clearCookie(OAUTH_COOKIE, secureCookies, '/auth/github/callback'),
+      serializeCookie(ACCOUNT_PICKER_COOKIE, '1', {
+        secure: secureCookies, path: '/auth/github', maxAge: 365 * 24 * 60 * 60,
+      }),
+    ]);
 
     return reply.code(204).send();
   });

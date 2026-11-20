@@ -299,6 +299,14 @@ function App() {
     setChecking(false);
   }
 
+  useEffect(() => {
+    function signedOutElsewhere(event: StorageEvent) {
+      if (event.key === 'webclass-logout') window.location.replace('/');
+    }
+    window.addEventListener('storage', signedOutElsewhere);
+    return () => window.removeEventListener('storage', signedOutElsewhere);
+  }, []);
+
   async function logout() {
     setLoggingOut(true);
 
@@ -312,8 +320,14 @@ function App() {
         throw new Error('Logout failed');
       }
 
-      setView({ page: 'home' });
-      setAuth({ status: 'anonymous' });
+      try {
+        localStorage.removeItem(ACTIVE_INSTITUTION_KEY);
+        localStorage.removeItem(VIEW_ROLE_KEY);
+        localStorage.setItem('webclass-logout', String(Date.now()));
+      } catch {
+        // The server already revoked this session even if storage is disabled.
+      }
+      window.location.replace('/');
     } catch {
       // La sesión sigue abierta: se avisa y la persona sigue donde estaba.
       toast({

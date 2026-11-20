@@ -255,6 +255,7 @@ describe('Auth v1 HTTP boundary', () => {
 
       expect(state).toMatch(/^[A-Za-z0-9_-]{43}$/);
       expect(binding).toMatch(/^[A-Za-z0-9_-]{43}$/);
+      expect(authorizationInput).toMatchObject({ selectAccount: false });
       expect(authorizationInput.state).toBe(state);
       expect(authorizationInput.challenge).toMatch(
         /^[A-Za-z0-9_-]{43}$/,
@@ -1080,8 +1081,13 @@ describe('Auth v1 HTTP boundary', () => {
         session,
       );
 
-      expect(response.headers['set-cookie']).toContain(
-        `${SESSION_COOKIE}=`,
+      const cookies = String(response.headers['set-cookie']);
+      expect(cookies).toContain(`${SESSION_COOKIE}=;`);
+      expect(cookies).toContain(`${OAUTH_COOKIE}=;`);
+      expect(cookies).toContain('webclass_choose_account=1');
+      await app.inject({ method: 'GET', url: '/auth/github', headers: { cookie: 'webclass_choose_account=1' } });
+      expect(dependencies.githubAuth.createAuthorizationUrl).toHaveBeenLastCalledWith(
+        expect.objectContaining({ selectAccount: true }),
       );
     } finally {
       await app.close();
