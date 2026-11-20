@@ -37,7 +37,7 @@ const ROLE_LABEL: Record<string, string> = {
   STUDENT: 'estudiante',
 };
 
-function describe(entry: AuditEntry): string {
+export function describe(entry: AuditEntry): string {
   const actor = entry.actorLogin ? `@${entry.actorLogin}` : 'Alguien';
   const target = entry.targetLogin ? `@${entry.targetLogin}` : 'un usuario';
 
@@ -53,7 +53,10 @@ function describe(entry: AuditEntry): string {
     case 'MEMBERSHIP_REVOKED':
       return `${actor} revocó el acceso de ${target}`;
     case 'INSTITUTION_CREATED':
-      return `${actor} registró la institución y nombró administrador a ${target}`;
+      return `${actor} registró la institución`;
+    case 'APPLICANT_UPDATED': return `${actor} actualizó los datos de ${target}`;
+    case 'MEMBERSHIP_RESTORED': return `${actor} restauró el acceso de ${target}`;
+    case 'MESSAGE_SENT': return `${actor} envió un mensaje a ${target}`;
     case 'MEMBERSHIP_ROLE_CHANGED': {
       const [from, to] = (entry.details ?? '').split('->');
       if (to === 'ADMIN') {

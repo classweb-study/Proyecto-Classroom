@@ -61,6 +61,7 @@ const ROLE_LABEL: Record<AccessRole, string> = {
 };
 
 const SUBMIT_ERRORS: Record<string, string> = {
+  REQUEST_UNAVAILABLE: 'Ya administras esta institución, tienes una solicitud pendiente o la institución dejó de estar disponible.', 
   INVALID_ACCESS_REQUEST:
     'Revisa los datos: nombre, correo de contacto, rol y motivo son obligatorios.',
   INSTITUTION_NOT_FOUND: 'La institución seleccionada ya no existe.',
@@ -99,7 +100,7 @@ function NewRequestForm({
     useState<Institution | null>(prefill?.institution ?? null);
 
   const [requestedRole, setRequestedRole] =
-    useState<AccessRole>(prefill?.requestedRole ?? 'STUDENT');
+    useState<AccessRole | 'ADMIN'>(prefill?.requestedRole ?? 'STUDENT');
   const [fullName, setFullName] = useState(prefill?.fullName ?? '');
   const [contactEmail, setContactEmail] = useState(
     prefill?.contactEmail ?? '',
@@ -171,7 +172,7 @@ function NewRequestForm({
     setError(null);
 
     try {
-      const response = await fetch('/me/access-requests', {
+      const response = await fetch(requestedRole === 'ADMIN' ? `/me/admin-requests/${institution.id}` : '/me/access-requests', {
         method: 'POST',
         credentials: 'same-origin',
         headers: {
@@ -219,8 +220,7 @@ function NewRequestForm({
             : 'Nueva solicitud de acceso'}
         </h2>
         <p className="muted">
-          Un administrador de la institución revisará tu
-          solicitud. Puedes usar Gmail u otro correo; el acceso
+          Selecciona la institución y el rol que necesitas. Puedes usar Gmail u otro correo; el acceso
           nunca se concede automáticamente.
         </p>
         {prefill?.decisionReason && (
@@ -293,14 +293,16 @@ function NewRequestForm({
           id="requested-role"
           value={requestedRole}
           onChange={event =>
-            setRequestedRole(event.target.value as AccessRole)
+            setRequestedRole(event.target.value as AccessRole | 'ADMIN')
           }
         >
           <option value="STUDENT">Estudiante</option>
           <option value="TEACHER">Docente</option>
+          <option value="ADMIN">Administrador de institución</option>
         </select>
       </div>
 
+      {requestedRole === 'ADMIN' ? <p>El administrador general revisará tu cuenta de GitHub y la institución seleccionada.</p> : <>
       <div className="form-grid">
         <div className="form-field">
           <label htmlFor="full-name">Nombre completo</label>
@@ -377,6 +379,7 @@ function NewRequestForm({
         />
       </div>
 
+      </>}
       {error && (
         <p className="form-error" role="alert">
           {error}
@@ -414,6 +417,7 @@ export function AccessRequestsPage({
   const [state, setState] = useState<LoadState>({
     status: 'loading',
   });
+  const [adminRequests, setAdminRequests] = useState<{id: string; institution: string; status: RequestStatus}[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [prefill, setPrefill] = useState<MyAccessRequest | undefined>();
   const [openThread, setOpenThread] = useState<string | null>(null);
@@ -438,8 +442,12 @@ export function AccessRequestsPage({
         requests: MyAccessRequest[];
       };
 
+      const adminResponse = await fetch('/me/admin-requests', {credentials:'same-origin'});
+      if (!adminResponse.ok) throw new Error('Load failed');
+      const {requests} = await adminResponse.json();
+      setAdminRequests(requests);
       setState({ status: 'ready', requests: body.requests });
-      setShowForm(body.requests.length === 0 && !embedded);
+      setShowForm(body.requests.length === 0 && !requests.length && !embedded);
       setPrefill(undefined);
     } catch {
       setState({ status: 'error' });
@@ -571,6 +579,9 @@ export function AccessRequestsPage({
         </div>
       )}
 
+      {adminRequests.length > 0 && <section className="admin-panel"><h2>Mis solicitudes de administración</h2>
+        <ul className="plain-list">{adminRequests.map(r => <li key={r.id}>{r.institution} · {STATUS_LABEL[r.status]}</li>)}</ul>
+      </section>}
       {state.status === 'ready' && showForm && (
         <NewRequestForm
           key={prefill?.id ?? 'new'}

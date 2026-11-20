@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 
+import { describe } from './AdminHomePage';
 import { api, errorMessage, formatDate } from '../lib/api';
 
 type PlatformInstitution = {
@@ -32,16 +33,25 @@ export function PlatformPage({ onChanged }: { onChanged: () => void }) {
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
   const [slugTouched, setSlugTouched] = useState(false);
-  const [adminLogin, setAdminLogin] = useState('');
+  const [requests, setRequests] = useState<{id:string; institution:string; login:string}[]>([]);
+  const [events, setEvents] = useState<(Parameters<typeof describe>[0] & {institution:string})[]>([]);
+  const [actor, setActor] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<
     { kind: 'ok' | 'error'; text: string } | null
   >(null);
 
   const load = useCallback(() => {
-    api<{ institutions: PlatformInstitution[] }>('/platform/institutions')
-      .then(body => setInstitutions(body.institutions))
-      .catch(() => setInstitutions([]));
+    Promise.all([
+      api<{ institutions: PlatformInstitution[] }>('/platform/institutions'),
+      api<{ requests: typeof requests }>('/platform/admin-requests'),
+      api<{ events: typeof events }>('/platform/admin-history'),
+    ]).then(([catalog, queue, history]) => {
+      setInstitutions(catalog.institutions);
+      setRequests(queue.requests);
+      setEvents(history.events);
+    }).catch(() => setMessage({kind:'error', text:'No pudimos cargar el panel. Recarga para reintentar.'}));
+
   }, []);
 
   useEffect(load, [load]);
@@ -54,16 +64,15 @@ export function PlatformPage({ onChanged }: { onChanged: () => void }) {
     try {
       await api('/platform/institutions', {
         method: 'POST',
-        body: { name, slug, firstAdminLogin: adminLogin },
+        body: { name, slug },
       });
       setMessage({
         kind: 'ok',
-        text: `Institución creada. @${adminLogin.replace(/^@/, '')} ya puede administrarla.`,
+        text: 'Institución creada. Ya pueden solicitar administrarla.',
       });
       setName('');
       setSlug('');
       setSlugTouched(false);
-      setAdminLogin('');
       load();
       onChanged();
     } catch (error) {
@@ -122,22 +131,7 @@ export function PlatformPage({ onChanged }: { onChanged: () => void }) {
               Minúsculas, números y guiones. Ej.: unisabana
             </span>
           </div>
-          <div className="form-field">
-            <label htmlFor="platform-admin">
-              Usuario de GitHub del primer administrador de institución
-            </label>
-            <input
-              id="platform-admin"
-              required
-              maxLength={40}
-              placeholder="@usuario"
-              value={adminLogin}
-              onChange={event => setAdminLogin(event.target.value)}
-            />
-            <span className="field-hint">
-              Debe haber iniciado sesión en WebClass al menos una vez.
-            </span>
-          </div>
+
         </div>
 
         {message && (
@@ -179,68 +173,39 @@ export function PlatformPage({ onChanged }: { onChanged: () => void }) {
                     {formatDate(item.createdAt)}
                   </span>
                 </div>
-                <AddAdmin institution={item} onAdded={load} />
+                <span>Administradores: {item.admins.map(login => '@' + login).join(', ') || 'ninguno'}</span>
               </li>
             ))}
           </ul>
         )}
       </section>
-    </div>
-  );
-}
-
-function AddAdmin({
-  institution,
-  onAdded,
-}: {
-  institution: PlatformInstitution;
-  onAdded: () => void;
-}) {
-  const [login, setLogin] = useState('');
-  const [error, setError] = useState<string | null>(null);
-
-  return (
-    <div className="platform-admins">
-      <span className="muted">
-        Administradores de institución:{' '}
-        {institution.admins.length
-          ? institution.admins.map(admin => `@${admin}`).join(', ')
-          : 'ninguno'}
-      </span>
-      <form
-        className="inline-form"
-        onSubmit={event => {
-          event.preventDefault();
-          setError(null);
-          api(`/platform/institutions/${institution.id}/admins`, {
-            method: 'POST',
-            body: { adminLogin: login },
-          })
-            .then(() => {
-              setLogin('');
-              onAdded();
-            })
-            .catch(addError =>
-              setError(errorMessage(addError, 'No pudimos asignarlo.')),
-            );
-        }}
-      >
-        <input
-          aria-label={`Nuevo administrador para ${institution.name}`}
-          placeholder="@usuario"
-          maxLength={40}
-          value={login}
-          onChange={event => setLogin(event.target.value)}
-        />
-        <button
-          type="submit"
-          className="link-button"
-          disabled={login.trim() === ''}
-        >
-          Asignar administrador de institución
-        </button>
-      </form>
-      {error && <span className="field-error">{error}</span>}
+      <section className="admin-panel">
+        <h2>Solicitudes de administradores de institución</h2>
+        {institutions && !requests.length && <p>No hay solicitudes pendientes.</p>}
+        <ul className="plain-list">{requests.map(r => <li key={r.id}>
+          <span>@{r.login} · {r.institution}</span>
+          {(['APPROVED', 'DENIED'] as const).map(decision =>
+            <button key={decision} disabled={busy} onClick={async () => {
+              setBusy(true);
+              try {
+                await api(`/platform/admin-requests/${r.id}`, {method:'POST', body:{decision}});
+                setMessage({kind:'ok',text: decision === 'APPROVED' ? 'Solicitud aprobada.' : 'Solicitud denegada.'});
+              } catch {setMessage({kind:'error',text:'No pudimos guardar la decisión.'});}
+              finally {load(); setBusy(false);}
+            }}>{decision === 'APPROVED' ? 'Aprobar' : 'Denegar'}</button>)}
+        </li>)}</ul>
+      </section>
+      <section className="admin-panel">
+        <h2>Historial por administrador</h2>
+        <label>Administrador <select value={actor} onChange={event => setActor(event.target.value)}>
+          <option value="">Todos</option>
+          {Array.from(new Set([...(institutions ?? []).flatMap(i => i.admins), ...events.map(e => e.actorLogin ?? '')])).filter(Boolean).sort().map(login =>
+            <option key={login} value={login}>@{login}</option>)}
+        </select></label>
+        <ul className="plain-list">{events.filter(e => !actor || e.actorLogin === actor).map(e =>
+          <li key={e.id}>{describe(e)} · {e.institution} · {formatDate(e.createdAt)}</li>)}</ul>
+        {institutions && !events.some(e => !actor || e.actorLogin === actor) && <p>Sin cambios registrados.</p>}
+      </section>
     </div>
   );
 }

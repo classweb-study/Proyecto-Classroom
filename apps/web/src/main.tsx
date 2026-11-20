@@ -191,7 +191,7 @@ function App() {
   const [preferredRole, setPreferredRole] = useState<string | null>(() =>
     readStored(VIEW_ROLE_KEY),
   );
-  const [platformOnly, setPlatformOnly] = useState(true);
+
 
   const authRef = useRef(auth);
   authRef.current = auth;
@@ -362,32 +362,18 @@ function App() {
       item => item.id === activeInstitutionId,
     ) ?? user.institutions[0];
 
-  // Without an approved institution the only things available are the
-  // request flow and, for platform admins, institution registration.
+  if (isPlatformAdmin) {
+    return <main className="access-requests-page">
+      <button className="logout-button" disabled={loggingOut} onClick={logout}>Cerrar sesión</button>
+      <PlatformPage onChanged={() => void loadSession()} />
+    </main>;
+  }
   if (!institution) {
-    if (platformOnly && isPlatformAdmin) {
-      return (
-        <main className="access-requests-page">
-          <button
-            type="button"
-            className="link-button back-link"
-            onClick={() => setPlatformOnly(false)}
-          >
-            ← Mis solicitudes
-          </button>
-          <PlatformPage onChanged={() => void loadSession()} />
-        </main>
-      );
-    }
-
     return (
       <AccessRequestsPage
         githubLogin={user.github.login}
         loggingOut={loggingOut}
         onLogout={logout}
-        onOpenPlatform={
-          isPlatformAdmin ? () => setPlatformOnly(true) : undefined
-        }
       />
     );
   }
