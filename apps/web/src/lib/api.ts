@@ -40,6 +40,7 @@ export async function api<T>(
 }
 
 const ERROR_MESSAGES: Record<string, string> = {
+  ROLE_CONFLICT: 'Esta cuenta ya tiene otro rol activo. Revisa sus membresías antes de cambiarlo.',
   FORBIDDEN: 'No tienes permiso para hacer esto.',
   NOT_FOUND: 'No encontramos lo que buscas o ya no tienes acceso.',
   ALREADY_MEMBER: 'Ya perteneces a este curso.',

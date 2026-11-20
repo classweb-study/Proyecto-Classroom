@@ -183,14 +183,14 @@ export function PlatformPage({ onChanged }: { onChanged: () => void }) {
         <h2>Solicitudes de administradores de institución</h2>
         {institutions && !requests.length && <p>No hay solicitudes pendientes.</p>}
         <ul className="plain-list">{requests.map(r => <li key={r.id}>
-          <span>@{r.login} · {r.institution}</span>
+          <span>@{r.login} · {r.institution}. Aprobar reemplaza su rol actual en esta institución.</span>
           {(['APPROVED', 'DENIED'] as const).map(decision =>
             <button key={decision} disabled={busy} onClick={async () => {
               setBusy(true);
               try {
                 await api(`/platform/admin-requests/${r.id}`, {method:'POST', body:{decision}});
                 setMessage({kind:'ok',text: decision === 'APPROVED' ? 'Solicitud aprobada.' : 'Solicitud denegada.'});
-              } catch {setMessage({kind:'error',text:'No pudimos guardar la decisión.'});}
+              } catch (error) {setMessage({kind:'error',text:errorMessage(error, 'No pudimos guardar la decisión.')});}
               finally {load(); setBusy(false);}
             }}>{decision === 'APPROVED' ? 'Aprobar' : 'Denegar'}</button>)}
         </li>)}</ul>

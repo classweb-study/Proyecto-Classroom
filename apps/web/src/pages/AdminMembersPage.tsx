@@ -149,6 +149,11 @@ export function AdminMembersPage({
       );
 
       if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        if (body.error === 'ROLE_CONFLICT') {
+          setActionError('La cuenta tiene un rol incompatible en otra institución o pertenece al administrador general.');
+          return;
+        }
         throw new Error('Action failed');
       }
 

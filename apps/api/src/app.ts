@@ -267,13 +267,19 @@ export function createApp(dependencies?: AppDependencies) {
   }
 
   app.addHook('preHandler', async (request, reply) => {
-    if (platformOwner && request.routeOptions.url?.startsWith('/admin/')) {
+    const path = request.routeOptions.url ?? '';
+    const ownerRestricted = path.startsWith('/admin/') ||
+      (request.method === 'POST' && path === '/me/access-requests');
+    if (platformOwner && ownerRestricted) {
       const user = await sessionUser(request.headers.cookie);
       if (user && isPlatformAdmin(user)) return reply.code(403).send({error:'FORBIDDEN'});
     }
   });
 
   app.setErrorHandler((error, _request, reply) => {
+    if (error instanceof Error && error.message === 'ROLE_CONFLICT') {
+      return reply.code(409).send({error:'ROLE_CONFLICT'});
+    }
     if (
       error instanceof Error &&
       error.message === 'AUTH_STORAGE_UNAVAILABLE'
