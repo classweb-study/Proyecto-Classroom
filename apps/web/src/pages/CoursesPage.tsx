@@ -386,6 +386,8 @@ function CoursePage({
   }
 
   const teacher = course.viewerRole === 'TEACHER';
+  const faculty = course.roster.filter(member => member.role === 'TEACHER');
+  const students = course.roster.filter(member => member.role === 'STUDENT');
 
   return (
     <div className="admin-page">
@@ -404,6 +406,9 @@ function CoursePage({
             {course.status === 'ARCHIVED' && ' · ARCHIVADO'}
           </p>
           <h1>{course.name}</h1>
+          <p>{faculty.length > 1 ? 'Profesores' : 'Profesor'}: {faculty.length
+            ? faculty.map(member => member.name ?? 'Nombre pendiente').join(', ')
+            : 'Sin profesor activo'}</p>
           {course.description && <p>{course.description}</p>}
         </div>
 
@@ -436,6 +441,17 @@ function CoursePage({
             </button>
           ))}
         </div>
+      )}
+
+      {!teacher && (
+        <section className="admin-panel">
+          <h2>Estudiantes de la clase ({students.length})</h2>
+          <ul className="plain-list">
+            {students.map(member => <li key={member.memberId}>
+              {member.name ?? 'Nombre pendiente'}{member.isSelf && ' (tú)'}
+            </li>)}
+          </ul>
+        </section>
       )}
 
       {(tab === 'activities' || !teacher) && (

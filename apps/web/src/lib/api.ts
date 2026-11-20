@@ -129,6 +129,7 @@ export type CourseSummary = {
 };
 
 export type CourseDetail = CourseSummary & {
+  roster: Array<{ memberId: string; name: string | null; role: CourseRole; isSelf: boolean }>;
   joinCode: string | null;
   joinEnabled: boolean;
 };

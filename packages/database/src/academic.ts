@@ -45,6 +45,7 @@ export type CourseSummary = {
 };
 
 export type CourseDetail = CourseSummary & {
+  roster: Array<{ memberId: string; name: string | null; role: CourseRole; isSelf: boolean }>;
   // Only present for teachers of the course.
   joinCode: string | null;
   joinEnabled: boolean;
@@ -629,10 +630,30 @@ export function createAcademicRepository(pool: Pool) {
 
         const teacher = row.viewer_role === 'TEACHER';
 
+        const roster = await client.query<CourseDetail['roster'][number]>(
+          `SELECT cm.id AS "memberId", cm.role, cm.user_id = $2 AS "isSelf",
+                  COALESCE(approved.name, NULLIF(trim(u.display_name), '')) AS name
+             FROM course_members cm
+             JOIN users u ON u.id = cm.user_id
+             JOIN institution_memberships im ON im.user_id = cm.user_id
+              AND im.institution_id = $3 AND im.role::text = cm.role::text AND im.status = 'ACTIVE'
+             LEFT JOIN LATERAL (
+               SELECT NULLIF(trim(r.full_name), '') AS name
+                 FROM institution_access_requests r
+                WHERE r.user_id = cm.user_id AND r.institution_id = im.institution_id
+                  AND r.status = 'APPROVED' AND NULLIF(trim(r.full_name), '') IS NOT NULL
+                ORDER BY r.decided_at DESC, r.id LIMIT 1
+             ) approved ON true
+            WHERE cm.course_id = $1 AND cm.status = 'ACTIVE'
+            ORDER BY name NULLS LAST, cm.id`,
+          [courseId, userId, row.institution_id],
+        );
+
         return {
           status: 'OK' as const,
           course: {
             ...toCourseSummary(row),
+            roster: roster.rows,
             joinCode: teacher ? row.join_code : null,
             joinEnabled: row.join_enabled,
           },
