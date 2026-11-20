@@ -625,3 +625,16 @@ export const submissions = pgTable(
     index('submissions_student_idx').on(table.studentUserId),
   ],
 );
+
+export const assignmentRepositories = pgTable('assignment_repositories', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  activityId: uuid('activity_id').notNull().references(() => activities.id),
+  studentId: uuid('student_id').notNull().references(() => users.id),
+  owner: text('owner').notNull(),
+  name: text('name').notNull(),
+  template: text('template').notNull(),
+  repositoryUrl: text('repository_url'),
+}, table => [
+  uniqueIndex('assignment_repository_student').on(table.activityId, table.studentId),
+  uniqueIndex('assignment_repository_name').on(table.owner, table.name),
+]);

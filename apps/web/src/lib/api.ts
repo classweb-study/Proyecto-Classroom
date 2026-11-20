@@ -62,6 +62,9 @@ const ERROR_MESSAGES: Record<string, string> = {
   INVALID_COURSE: 'Revisa los datos del curso (el nombre es obligatorio).',
   INVALID_ACTIVITY:
     'Revisa la actividad: título, instrucciones y tipo son obligatorios y los enlaces deben empezar por https://.',
+  INVALID_TEMPLATE: 'El profesor debe elegir una plantilla de GitHub autorizada para la institución.',
+  REPOSITORY_CONFLICT: 'Ya existe otro repositorio con ese nombre. Contacta al administrador.',
+  REPOSITORIES_UNCONFIGURED: 'La institución aún debe conectar su organización de GitHub.',
   INVALID_PROFILE: 'Revisa los datos del perfil.',
   INVALID_MESSAGE: 'El mensaje no puede estar vacío (máximo 2000 caracteres).',
   INVALID_INSTITUTION: 'Revisa los datos de la institución.',

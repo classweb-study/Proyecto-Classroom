@@ -180,9 +180,7 @@ export function ActivityForm({
             onChange={event => setTemplateRepoUrl(event.target.value)}
           />
           <span className="field-hint">
-            WebClass no crea repositorios automáticamente: los
-            estudiantes usan la plantilla y entregan el enlace de su
-            repositorio.
+            Con una plantilla de GitHub autorizada, cada estudiante puede aceptar la tarea para crear su copia privada.
           </span>
         </div>
       )}

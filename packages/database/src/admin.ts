@@ -255,6 +255,21 @@ async function isActiveAdmin(
   return result.rowCount === 1;
 }
 
+// Role changes also revoke the previous membership. Offer only the most
+// recent role, and only while the person has no active institutional access.
+const restorableMemberships = `
+  SELECT DISTINCT ON (m.user_id) m.id, m.user_id, m.role, m.updated_at
+    FROM institution_memberships m
+   WHERE m.institution_id = $1 AND m.role IN ('TEACHER', 'STUDENT')
+     AND m.status IN ('REVOKED', 'SUSPENDED')
+     AND NOT EXISTS (
+       SELECT 1 FROM institution_memberships active
+        WHERE active.institution_id = m.institution_id AND active.user_id = m.user_id
+          AND active.status = 'ACTIVE'
+     )
+   ORDER BY m.user_id, m.updated_at DESC, m.id
+`;
+
 export function createAdminRepository(pool: Pool) {
   return Object.freeze({
     async listPendingAccessRequests(
@@ -454,6 +469,25 @@ export function createAdminRepository(pool: Pool) {
       } finally {
         client?.release();
       }
+    },
+
+    updateApplicant(input: {
+      actorUserId: string;
+      institutionId: string;
+      requestId: string;
+      fullName: string;
+      contactEmail: string;
+      institutionalCode: string;
+    }) {
+      return asInstitutionAdmin(pool, input.actorUserId, input.institutionId, async client => {
+        const result = await client.query(
+          `UPDATE institution_access_requests
+              SET full_name = $3, contact_email = $4, institutional_code = $5, updated_at = now()
+            WHERE id = $1 AND institution_id = $2 AND status = 'PENDING'`,
+          [input.requestId, input.institutionId, input.fullName, input.contactEmail, input.institutionalCode],
+        );
+        return result.rowCount === 1 ? { status: 'OK' } as const : { status: 'NOT_FOUND' } as const;
+      });
     },
 
     async approveAccessRequest(input: {
@@ -896,6 +930,39 @@ export function createAdminRepository(pool: Pool) {
           return { status: 'OK' };
         },
       );
+    },
+
+    listRemovedMembers(actor: string, institution: string) {
+      return asInstitutionAdmin(pool, actor, institution, async client => {
+        const result = await client.query<{ id: string; login: string; role: AssignableInstitutionRole; pending: boolean }>(
+          `SELECT m.id, g.login, m.role, EXISTS (
+              SELECT 1 FROM institution_access_requests r
+               WHERE r.institution_id = $1 AND r.user_id = m.user_id AND r.status = 'PENDING'
+           ) AS pending
+             FROM (${restorableMemberships}) m JOIN github_identities g ON g.user_id = m.user_id
+            ORDER BY g.login`, [institution],
+        );
+        return { status: 'OK' as const, members: result.rows };
+      });
+    },
+
+    restoreMembership(actor: string, institution: string, membership: string) {
+      return asInstitutionAdmin(pool, actor, institution, async client => {
+        const locked = await client.query(
+          `SELECT u.id FROM users u JOIN institution_memberships m ON m.user_id = u.id
+            WHERE m.institution_id = $1 AND m.id = $2 AND m.role IN ('TEACHER','STUDENT')
+            FOR UPDATE OF u`, [institution, membership],
+        );
+        if (!locked.rowCount) return { status: 'NOT_FOUND' as const };
+        const restored = await client.query(
+          `UPDATE institution_memberships m SET status = 'ACTIVE', updated_at = now()
+            WHERE m.id = $2 AND m.id IN (SELECT id FROM (${restorableMemberships}) eligible)
+              AND NOT EXISTS (SELECT 1 FROM institution_access_requests r WHERE r.institution_id = $1
+                               AND r.user_id = m.user_id AND r.status = 'PENDING')
+            RETURNING m.id`, [institution, membership],
+        );
+        return restored.rowCount ? { status: 'OK' as const } : { status: 'STALE_MEMBERSHIP' as const };
+      });
     },
 
     revokeMembership(input: {

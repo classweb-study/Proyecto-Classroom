@@ -299,6 +299,14 @@ function App() {
     setChecking(false);
   }
 
+  useEffect(() => {
+    function signedOutElsewhere(event: StorageEvent) {
+      if (event.key === 'webclass-logout') window.location.replace('/');
+    }
+    window.addEventListener('storage', signedOutElsewhere);
+    return () => window.removeEventListener('storage', signedOutElsewhere);
+  }, []);
+
   async function logout() {
     setLoggingOut(true);
 
@@ -312,8 +320,14 @@ function App() {
         throw new Error('Logout failed');
       }
 
-      setView({ page: 'home' });
-      setAuth({ status: 'anonymous' });
+      try {
+        localStorage.removeItem(ACTIVE_INSTITUTION_KEY);
+        localStorage.removeItem(VIEW_ROLE_KEY);
+        localStorage.setItem('webclass-logout', String(Date.now()));
+      } catch {
+        // The server already revoked this session even if storage is disabled.
+      }
+      window.location.replace('/');
     } catch {
       // La sesión sigue abierta: se avisa y la persona sigue donde estaba.
       toast({
@@ -444,31 +458,39 @@ function App() {
         );
 
       case 'users':
-        return (
-          <AdminUsersPage
-            institutionId={institution.id}
-            institutionName={institution.name}
-          />
-        );
-
       case 'teachers':
-        return (
-          <AdminMembersPage
-            institutionId={institution.id}
-            institutionName={institution.name}
-            role="TEACHER"
-            currentUserId={user.id}
-          />
-        );
-
       case 'students':
         return (
-          <AdminMembersPage
-            institutionId={institution.id}
-            institutionName={institution.name}
-            role="STUDENT"
-            currentUserId={user.id}
-          />
+          <>
+            <label className="form-field">
+              Filtrar por institución
+              <select value={institution.id} onChange={event => {
+                setActiveInstitutionId(event.target.value);
+                store(ACTIVE_INSTITUTION_KEY, event.target.value);
+                setPreferredRole('ADMIN');
+                store(VIEW_ROLE_KEY, 'ADMIN');
+              }}>
+                {user.institutions.filter(item => item.roles.includes('ADMIN')).map(item => (
+                  <option key={item.id} value={item.id}>{item.name}</option>
+                ))}
+              </select>
+            </label>
+            {page === 'users' ? (
+              <AdminUsersPage
+                key={institution.id}
+                institutionId={institution.id}
+                institutionName={institution.name}
+              />
+            ) : (
+              <AdminMembersPage
+                key={`${institution.id}-${page}`}
+                institutionId={institution.id}
+                institutionName={institution.name}
+                role={page === 'teachers' ? 'TEACHER' : 'STUDENT'}
+                currentUserId={user.id}
+              />
+            )}
+          </>
         );
 
       case 'institution':
@@ -492,6 +514,7 @@ function App() {
                 institutionId={institution.id}
                 institutionName={institution.name}
                 onOpenRequests={() => navigate({ page: 'users' })}
+                onManageInstitutions={isPlatformAdmin ? () => navigate({ page: 'platform' }) : undefined}
               />
             ) : viewRole === 'TEACHER' ? (
               <TeacherHomePage

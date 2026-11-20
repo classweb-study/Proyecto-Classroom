@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 
+import { api, errorMessage } from '../lib/api';
 import { RequestMessages } from '../components/RequestMessages';
 
 type AssignableRole = 'TEACHER' | 'STUDENT';
@@ -60,6 +61,51 @@ function formatDate(value: string) {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(date);
+}
+
+function ApplicantForm({ request, onSaved }: {
+  request: PendingAccessRequest;
+  onSaved: () => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  return (
+    <details>
+      <summary>Editar datos del solicitante</summary>
+      <form className="access-form plain" onSubmit={async event => {
+        event.preventDefault();
+        const data = new FormData(event.currentTarget);
+        setBusy(true);
+        setError('');
+        try {
+          await api(`/admin/institutions/${request.institutionId}/access-requests/${request.id}/applicant`, {
+            method: 'PATCH',
+            body: Object.fromEntries(data),
+          });
+          await onSaved();
+        } catch (cause) {
+          setError(errorMessage(cause, 'No pudimos guardar los datos. Revisa si la solicitud sigue pendiente.'));
+        } finally {
+          setBusy(false);
+        }
+      }}>
+        <label className="form-field">Nombre completo
+          <input name="fullName" required minLength={2} maxLength={120} defaultValue={request.fullName ?? ''} />
+        </label>
+        <label className="form-field">Correo de contacto
+          <input name="contactEmail" type="email" required maxLength={254} defaultValue={request.contactEmail ?? ''} />
+        </label>
+        <label className="form-field">ID institucional
+          <input name="institutionalCode" required maxLength={40} defaultValue={request.institutionalCode ?? ''} />
+        </label>
+        {error && <p className="form-error" role="alert">{error}</p>}
+        <button type="submit" className="primary-action" disabled={busy}>
+          {busy ? 'Guardando…' : 'Guardar datos'}
+        </button>
+      </form>
+    </details>
+  );
 }
 
 export function AdminUsersPage({
@@ -452,6 +498,9 @@ export function AdminUsersPage({
                       )}
                     </div>
                   </article>
+
+                  <p className="field-hint">Universidad de la solicitud: {request.institutionName}</p>
+                  {pendingView && <ApplicantForm request={request} onSaved={loadRequests} />}
 
                   {!pendingView && request.decidedAt && (
                     <p className="field-hint decision-line">

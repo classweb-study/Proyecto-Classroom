@@ -127,6 +127,7 @@ function createDependencies() {
         members: [],
       }),
     ),
+    updateApplicant: vi.fn(async () => ({ status: 'OK' as const })),
     approveAccessRequest: vi.fn(
       async (): Promise<
         | {
@@ -178,6 +179,8 @@ function createDependencies() {
     removeInstitutionDomain: vi.fn(
       async () => ({ status: 'FORBIDDEN' as const }),
     ),
+    listRemovedMembers: vi.fn(async () => ({ status: 'OK' as const, members: [] })),
+    restoreMembership: vi.fn(async () => ({ status: 'OK' as const })),
     revokeMembership: vi.fn(
       async () => ({ status: 'FORBIDDEN' as const }),
     ),
@@ -252,6 +255,7 @@ describe('Auth v1 HTTP boundary', () => {
 
       expect(state).toMatch(/^[A-Za-z0-9_-]{43}$/);
       expect(binding).toMatch(/^[A-Za-z0-9_-]{43}$/);
+      expect(authorizationInput).toMatchObject({ selectAccount: false });
       expect(authorizationInput.state).toBe(state);
       expect(authorizationInput.challenge).toMatch(
         /^[A-Za-z0-9_-]{43}$/,
@@ -739,6 +743,30 @@ describe('Auth v1 HTTP boundary', () => {
     }
   });
 
+  it('validates applicant edits and preserves leading zeros in the institutional ID', async () => {
+    const dependencies = createDependencies();
+    const app = createApp(dependencies);
+    const institutionId = '22222222-2222-4222-8222-222222222222';
+    const requestId = '33333333-3333-4333-8333-333333333333';
+    const payload = { fullName: 'Ana Ruiz', contactEmail: 'ana@example.edu', institutionalCode: '0017' };
+    const edit = (contactEmail: string) => app.inject({
+      method: 'PATCH',
+      url: `/admin/institutions/${institutionId}/access-requests/${requestId}/applicant`,
+      headers: { origin: 'https://vmat.example', cookie: `${SESSION_COOKIE}=${token('s')}` },
+      payload: { ...payload, contactEmail },
+    });
+    try {
+      expect((await edit('invalid')).statusCode).toBe(400);
+      expect(dependencies.admin.updateApplicant).not.toHaveBeenCalled();
+      expect((await edit(payload.contactEmail)).statusCode).toBe(200);
+      expect(dependencies.admin.updateApplicant).toHaveBeenCalledWith({
+        ...payload, institutionId, requestId, actorUserId: '11111111-1111-4111-8111-111111111111',
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
   it('rejects cross-origin access approval before the admin repository is called', async () => {
     const dependencies = createDependencies();
     const app = createApp(dependencies);
@@ -1053,8 +1081,13 @@ describe('Auth v1 HTTP boundary', () => {
         session,
       );
 
-      expect(response.headers['set-cookie']).toContain(
-        `${SESSION_COOKIE}=`,
+      const cookies = String(response.headers['set-cookie']);
+      expect(cookies).toContain(`${SESSION_COOKIE}=;`);
+      expect(cookies).toContain(`${OAUTH_COOKIE}=;`);
+      expect(cookies).toContain('webclass_choose_account=1');
+      await app.inject({ method: 'GET', url: '/auth/github', headers: { cookie: 'webclass_choose_account=1' } });
+      expect(dependencies.githubAuth.createAuthorizationUrl).toHaveBeenLastCalledWith(
+        expect.objectContaining({ selectAccount: true }),
       );
     } finally {
       await app.close();

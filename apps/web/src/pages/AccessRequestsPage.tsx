@@ -28,6 +28,7 @@ type MyAccessRequest = {
   institutionalEmail: string | null;
   institutionalCode: string | null;
   requestReason: string | null;
+  hasActiveMembership: boolean;
   messageCount: number;
   createdAt: string;
   decidedAt: string | null;
@@ -636,7 +637,9 @@ export function AccessRequestsPage({
                       <span>
                         Aprobada como{' '}
                         {ROLE_LABEL[request.assignedRole]}.
-                        Recarga la página para entrar.
+                        {request.hasActiveMembership
+                          ? 'Recarga la página para entrar.'
+                          : 'Tu membresía en esta institución ya no está activa.'}
                       </span>
                     )}
 
@@ -671,7 +674,9 @@ export function AccessRequestsPage({
                   </button>
 
                   {(request.status === 'DENIED' ||
-                    request.status === 'CANCELLED') &&
+                    request.status === 'CANCELLED' ||
+                    request.status === 'APPROVED') &&
+                    !request.hasActiveMembership &&
                     !pendingFor(request.institution.id) && (
                       <button
                         type="button"
@@ -681,7 +686,7 @@ export function AccessRequestsPage({
                           setShowForm(true);
                         }}
                       >
-                        Corregir y reenviar
+                        {request.status === 'APPROVED' ? 'Volver a solicitar acceso' : 'Corregir y reenviar'}
                       </button>
                     )}
 

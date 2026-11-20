@@ -1,4 +1,4 @@
-import { randomInt } from 'node:crypto';
+import { randomInt, randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 
 /*
@@ -1190,6 +1190,61 @@ export function createAcademicRepository(pool: Pool) {
 
         return { status: 'OK' as const, activityId: created.rows[0]!.id };
       });
+    },
+
+    async assignmentRepository(userId: string, activityId: string, reserve: boolean, owners: Record<string, string>) {
+      return transaction(pool, async client => {
+        const access = await activityAccess(client, userId, activityId);
+        if (!access) return { status: 'NOT_FOUND' as const };
+        if (access.role !== 'STUDENT') return { status: 'FORBIDDEN' as const };
+        type Reservation = { id: string; owner: string; name: string; template: string; repository_url: string | null };
+        const lookup = () => client.query<Reservation>(
+          'SELECT * FROM assignment_repositories WHERE activity_id = $1 AND student_id = $2',
+          [activityId, userId],
+        );
+        let row = (await lookup()).rows[0];
+        if (!reserve || row?.repository_url) {
+          return { status: 'OK' as const, url: row?.repository_url ?? null };
+        }
+        if (access.courseStatus !== 'ACTIVE') return { status: 'COURSE_ARCHIVED' as const };
+        const { rows: [activity] } = await client.query<{
+          title: string; template_repo_url: string | null; eligible: boolean; github_user_id: string; login: string;
+        }>(`SELECT a.title, a.template_repo_url, g.github_user_id, g.login,
+                   (a.allow_late OR a.due_at IS NULL OR a.due_at >= now()) AS eligible
+              FROM activities a JOIN github_identities g ON g.user_id = $2
+             WHERE a.id = $1 AND a.kind = 'REPOSITORY' AND a.status = 'PUBLISHED' FOR SHARE OF a`, [activityId, userId]);
+        if (!activity?.template_repo_url) return { status: 'INVALID_TEMPLATE' as const };
+        if (!activity.eligible) return { status: 'DEADLINE_PASSED' as const };
+        const owner = owners[access.institutionId]?.toLowerCase();
+        if (!owner || (row && row.owner !== owner)) return { status: 'REPOSITORIES_UNCONFIGURED' as const };
+        const match = /^https:\/\/github\.com\/([a-z0-9-]+\/[a-z0-9_.-]+)\/?$/i.exec(activity.template_repo_url);
+        if (!match || match[1].split('/').some(part => part === '.' || part === '..')) return { status: 'INVALID_TEMPLATE' as const };
+        if (!row) {
+          const title = activity.title.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 46) || 'tarea';
+          const name = title + '-' + activity.login.toLowerCase();
+          const insert = (name: string) => client.query<Reservation>(
+            `INSERT INTO assignment_repositories(activity_id, student_id, owner, name, template)
+             VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING RETURNING *`,
+            [activityId, userId, owner, name, match[1]],
+          );
+          row = (await insert(name)).rows[0] ?? (await lookup()).rows[0];
+          if (!row) row = (await insert(name + '-' + randomUUID().slice(0, 8))).rows[0] ?? (await lookup()).rows[0];
+          if (!row) return { status: 'REPOSITORY_CONFLICT' as const };
+        }
+        const teachers = await client.query<{ github_user_id: string }>(
+          `SELECT g.github_user_id FROM course_members cm
+             JOIN github_identities g ON g.user_id = cm.user_id
+             JOIN institution_memberships im ON im.institution_id = $2 AND im.user_id = cm.user_id
+            WHERE cm.course_id = $1 AND cm.role = 'TEACHER' AND cm.status = 'ACTIVE'
+              AND im.role = 'TEACHER' AND im.status = 'ACTIVE'`, [access.courseId, access.institutionId]);
+        return { status: 'OK' as const, url: row.repository_url, reservation: { ...row, template: match[1] }, institutionId: access.institutionId,
+          student: String(activity.github_user_id), teachers: teachers.rows.map(t => String(t.github_user_id)) };
+      });
+    },
+
+    async completeAssignmentRepository(id: string, url: string) {
+      await pool.query('UPDATE assignment_repositories SET repository_url = $2 WHERE id = $1', [id, url]);
     },
 
     async getActivity(

@@ -22,6 +22,7 @@ import {
   readCookie,
   serializeCookie,
   clearCookie,
+  ACCOUNT_PICKER_COOKIE,
   validState,
   validOAuthCode,
   validOpaqueToken,
@@ -109,6 +110,7 @@ const ADMIN_RESULT_ERRORS: Record<string, [number, string]> = {
   FORBIDDEN: [403, 'FORBIDDEN'],
   NOT_FOUND: [404, 'NOT_FOUND'],
   SELF: [409, 'CANNOT_MODIFY_OWN_MEMBERSHIP'],
+  STALE_MEMBERSHIP: [409, 'STALE_MEMBERSHIP'],
   SAME_ROLE: [409, 'ROLE_UNCHANGED'],
   DUPLICATE: [409, 'DOMAIN_ALREADY_EXISTS'],
 };
@@ -295,7 +297,7 @@ export function createApp(dependencies?: AppDependencies) {
     });
   });
 
-  app.get('/auth/github', async (_request, reply) => {
+  app.get('/auth/github', async (request, reply) => {
     const {
       state,
       binding,
@@ -308,6 +310,7 @@ export function createApp(dependencies?: AppDependencies) {
     const authorizationUrl = githubAuth.createAuthorizationUrl({
       state,
       challenge,
+      selectAccount: readCookie(request.headers.cookie, ACCOUNT_PICKER_COOKIE) === '1',
     });
 
     reply.header(
@@ -410,6 +413,7 @@ export function createApp(dependencies?: AppDependencies) {
 
     reply.header('set-cookie', [
       clearOAuth,
+      clearCookie(ACCOUNT_PICKER_COOKIE, secureCookies, '/auth/github'),
       serializeCookie(SESSION_COOKIE, session.secret, {
         secure: secureCookies,
         path: '/',
@@ -422,6 +426,7 @@ export function createApp(dependencies?: AppDependencies) {
   });
 
   app.get('/me', async (request, reply) => {
+    reply.header('cache-control', 'no-store');
     const secret = readCookie(
       request.headers.cookie,
       SESSION_COOKIE,
@@ -965,6 +970,42 @@ export function createApp(dependencies?: AppDependencies) {
     },
   );
 
+  app.patch<{
+    Params: { institutionId: string; requestId: string };
+    Body: { fullName?: unknown; contactEmail?: unknown; institutionalCode?: unknown };
+  }>('/admin/institutions/:institutionId/access-requests/:requestId/applicant', async (request, reply) => {
+    const actor = await adminRouteActor(request, reply, ['institutionId', 'requestId']);
+    if (!actor) return reply;
+
+    const fullName = boundedText(request.body?.fullName, 2, 120);
+    const contactEmail = validEmail(request.body?.contactEmail);
+    const institutionalCode = boundedText(request.body?.institutionalCode, 1, 40);
+    if (!fullName || !contactEmail || !institutionalCode) {
+      return reply.code(400).send({ error: 'INVALID_APPLICANT' });
+    }
+
+    const result = await admin.updateApplicant({
+      actorUserId: actor.userId, ...request.params, fullName, contactEmail, institutionalCode,
+    });
+    return sendAdminResult(reply, result, () => ({ saved: true }));
+  });
+
+  app.get<{ Params: { institutionId: string } }>('/admin/institutions/:institutionId/removed-members', async (request, reply) => {
+    const actor = await adminRouteActor(request, reply, ['institutionId']);
+    if (!actor) return reply;
+    const result = await admin.listRemovedMembers(actor.userId, request.params.institutionId);
+    return sendAdminResult(reply, result, value => ({ members: value.members }));
+  });
+
+  app.post<{ Params: { institutionId: string; membershipId: string } }>(
+    '/admin/institutions/:institutionId/members/:membershipId/restore', async (request, reply) => {
+      const actor = await adminRouteActor(request, reply, ['institutionId', 'membershipId']);
+      if (!actor) return reply;
+      const result = await admin.restoreMembership(actor.userId, request.params.institutionId, request.params.membershipId);
+      return sendAdminResult(reply, result, () => ({ restored: true }));
+    },
+  );
+
   app.get<{ Params: { institutionId: string } }>(
     '/admin/institutions/:institutionId',
     async (request, reply) => {
@@ -1435,10 +1476,13 @@ export function createApp(dependencies?: AppDependencies) {
       await auth.revokeSession(secret);
     }
 
-    reply.header(
-      'set-cookie',
+    reply.header('set-cookie', [
       clearCookie(SESSION_COOKIE, secureCookies),
-    );
+      clearCookie(OAUTH_COOKIE, secureCookies, '/auth/github/callback'),
+      serializeCookie(ACCOUNT_PICKER_COOKIE, '1', {
+        secure: secureCookies, path: '/auth/github', maxAge: 365 * 24 * 60 * 60,
+      }),
+    ]);
 
     return reply.code(204).send();
   });

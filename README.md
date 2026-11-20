@@ -153,3 +153,9 @@ Falta una comprobacion manual con una cuenta de prueba autorizada: iniciar
 sesion, volver al dominio, recargar, realizar una operacion permitida, comprobar
 la persistencia y cerrar sesion. Nunca usar una cuenta personal ajena ni anotar
 tokens o cookies como evidencia.
+
+### Repositorios individuales de actividades
+
+Aplica la migración de producto 0007 con el comando habitual de migraciones. Instala una GitHub App en la organización donde el curso alojará los repositorios privados. Necesita administración de repositorios en escritura y contenidos en lectura, acceso a los repositorios nuevos y permiso de la organización para invitar colaboradores. Configura las tres variables `ASSIGNMENT_GITHUB_*` de `.env.example` en el servicio API. La clave privada PEM pertenece al servidor. Cada institución se identifica por su UUID y apunta a su propia instalación. Usa una organización docente con permisos base restringidos para mantener separados los trabajos de los estudiantes.
+
+El profesor publica una actividad de tipo Repositorio con el enlace de una plantilla marcada como **Template repository** en GitHub. Admite plantillas públicas y las privadas expresamente incluidas en la lista de esa institución. El estudiante pulsa **Aceptar tarea**, acepta la invitación de GitHub si aparece y abre su copia. Los docentes activos del curso reciben acceso de lectura al crearla. **Confirmar entrega** sigue siendo un paso separado. Si falla una invitación, volver a pulsar **Aceptar tarea** retoma la misma reserva.

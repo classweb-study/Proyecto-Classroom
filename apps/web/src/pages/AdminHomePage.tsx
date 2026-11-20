@@ -1,9 +1,11 @@
+import { RemovedMembersPanel } from './RemovedMembersPanel';
 import { useEffect, useState } from 'react';
 
 type AdminHomePageProps = {
   institutionId: string;
   institutionName: string;
   onOpenRequests: () => void;
+  onManageInstitutions?: () => void;
 };
 
 type Overview = {
@@ -87,10 +89,13 @@ export function AdminHomePage({
   institutionId,
   institutionName,
   onOpenRequests,
+  onManageInstitutions,
 }: AdminHomePageProps) {
   const [state, setState] = useState<LoadState>({
     status: 'loading',
   });
+
+  const [revision, setRevision] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -133,7 +138,7 @@ export function AdminHomePage({
       });
 
     return () => controller.abort();
-  }, [institutionId]);
+  }, [institutionId, revision]);
 
   return (
     <div className="admin-page">
@@ -151,6 +156,19 @@ export function AdminHomePage({
           Administrador
         </span>
       </section>
+
+      <RemovedMembersPanel key={institutionId} institutionId={institutionId} institutionName={institutionName}
+        onOpenRequests={onOpenRequests} onRestored={() => setRevision(value => value + 1)} />
+
+      {onManageInstitutions && (
+        <section className="admin-panel">
+          <h2>Universidades</h2>
+          <p>Registra una institución y elige quién administrará sus solicitudes.</p>
+          <button type="button" className="primary-action" onClick={onManageInstitutions}>
+            Crear o administrar instituciones
+          </button>
+        </section>
+      )}
 
       {state.status === 'loading' && (
         <div className="admin-loading">
