@@ -1,15 +1,51 @@
 import {
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
 
-export type AdminPage =
-  | 'home'
-  | 'users'
-  | 'teachers'
-  | 'students'
-  | 'institution';
+import {
+  ChevronDownIcon,
+  ChevronRightIcon,
+  CloseIcon,
+  GridIcon,
+  HalfCircleIcon,
+  HomeIcon,
+  InstitutionIcon,
+  MenuIcon,
+  MoonIcon,
+  PaletteIcon,
+  StudentIcon,
+  SunIcon,
+  TeacherIcon,
+  UserIcon,
+  UsersIcon,
+} from './icons';
+import { ProfileMenu } from './ProfileMenu';
+import { SectionSearch } from './SectionSearch';
+
+import {
+  GROUP_LABELS,
+  breadcrumbsFor,
+  pageTitle,
+  primaryRoleLabel,
+  visibleSections,
+  type AdminPage,
+  type Section,
+  type SectionGroup,
+} from '../navigation/sections';
+import {
+  THEME_ADJECTIVES,
+  nextTheme,
+  type Theme,
+} from '../theme/appearance';
+import {
+  setAppearance,
+  useAppearance,
+} from '../theme/appearance-store';
+
+export type { AdminPage } from '../navigation/sections';
 
 type AppShellProps = {
   activePage: AdminPage;
@@ -17,152 +53,97 @@ type AppShellProps = {
   githubLogin: string;
   avatarUrl: string | null;
   institutionName: string;
+  /*
+   * Selector de institución activa, para quien pertenece a varias.
+   * Mismos nombres que usa main.tsx en la rama feat/maura-admin-institution.
+   * Son opcionales: sin ellos se muestra solo el nombre.
+   */
+  institutions?: Array<{ id: string; name: string }>;
+  activeInstitutionId?: string;
+  onSwitchInstitution?: (institutionId: string) => void;
   roles: string[];
   loggingOut: boolean;
   onLogout: () => void;
   children: ReactNode;
 };
 
-type NavItem = {
-  id: AdminPage;
-  label: string;
-  icon: ReactNode;
+const ICONS: Record<AdminPage, ReactNode> = {
+  home: <HomeIcon />,
+  users: <UsersIcon />,
+  teachers: <TeacherIcon />,
+  students: <StudentIcon />,
+  institution: <InstitutionIcon />,
+  profile: <UserIcon />,
+  appearance: <PaletteIcon />,
+  components: <GridIcon />,
 };
 
-function HomeIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        d="M3 10.8 12 3l9 7.8v9.1a1.1 1.1 0 0 1-1.1 1.1H15v-6H9v6H4.1A1.1 1.1 0 0 1 3 19.9Z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
+// El catálogo solo existe con `npm run dev:web`; el build lo elimina.
+const SECTIONS = visibleSections(import.meta.env.DEV);
+const GROUPS: SectionGroup[] = ['admin', 'settings'];
 
-function UsersIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-function TeacherIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        d="m3 8 9-5 9 5-9 5-9-5Zm4 2.2V15c0 1.7 2.2 3 5 3s5-1.3 5-3v-4.8M21 8v6"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function StudentIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        d="M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2M9.5 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM17 8h5M19.5 5.5v5"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-function InstitutionIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        d="M3 21h18M5 21V9h14v12M3 9l9-6 9 6M9 13h2M13 13h2M9 17h2M13 17h2"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-const navItems: NavItem[] = [
-  { id: 'home', label: 'Inicio', icon: <HomeIcon /> },
-  { id: 'users', label: 'Usuarios', icon: <UsersIcon /> },
-  { id: 'teachers', label: 'Profesores', icon: <TeacherIcon /> },
-  { id: 'students', label: 'Estudiantes', icon: <StudentIcon /> },
-  {
-    id: 'institution',
-    label: 'Institución',
-    icon: <InstitutionIcon />,
-  },
-];
-
-type Theme = 'light' | 'dark';
-
-function getInitialTheme(): Theme {
-  const stored = window.localStorage.getItem('vmat-theme');
-
-  if (stored === 'light' || stored === 'dark') {
-    return stored;
-  }
-
-  return window.matchMedia(
-    '(prefers-color-scheme: dark)',
-  ).matches
-    ? 'dark'
-    : 'light';
-}
-
+/* Muestra la base a la que se va a cambiar, no la actual. */
 function ThemeIcon({ theme }: { theme: Theme }) {
-  if (theme === 'dark') {
-    return (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <circle
-          cx="12"
-          cy="12"
-          r="4"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.8"
-        />
-        <path
-          d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.65 17.65l1.42 1.42M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.65 6.35l1.42-1.42"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-        />
-      </svg>
-    );
-  }
+  if (theme === 'light') return <SunIcon />;
+  if (theme === 'dark') return <MoonIcon />;
+  return <HalfCircleIcon />;
+}
+
+function NavButton({
+  section,
+  active,
+  onNavigate,
+}: {
+  section: Section;
+  active: boolean;
+  onNavigate: (page: AdminPage) => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={active ? 'vmat-nav-item active' : 'vmat-nav-item'}
+      aria-current={active ? 'page' : undefined}
+      onClick={() => onNavigate(section.id)}
+    >
+      <span className="vmat-nav-icon">{ICONS[section.id]}</span>
+      <span>{section.label}</span>
+    </button>
+  );
+}
+
+function Breadcrumbs({
+  page,
+  institutionName,
+  onNavigate,
+}: {
+  page: AdminPage;
+  institutionName: string;
+  onNavigate: (page: AdminPage) => void;
+}) {
+  const crumbs = breadcrumbsFor(page, institutionName);
 
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5 8.5 8.5 0 1 0 20.5 14.2Z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
+    <nav className="breadcrumbs" aria-label="Ruta de navegación">
+      <ol>
+        {crumbs.map((crumb, index) => {
+          const last = index === crumbs.length - 1;
+          return (
+            <li key={`${crumb.label}-${index}`}>
+              {crumb.page && !last ? (
+                <button type="button" title={crumb.label} onClick={() => onNavigate(crumb.page!)}>
+                  {crumb.label}
+                </button>
+              ) : (
+                <span aria-current={last ? 'page' : undefined} title={crumb.label}>
+                  {crumb.label}
+                </span>
+              )}
+              {!last && <ChevronRightIcon className="breadcrumbs-separator" />}
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
   );
 }
 
@@ -172,145 +153,217 @@ export function AppShell({
   githubLogin,
   avatarUrl,
   institutionName,
+  institutions = [],
+  activeInstitutionId,
+  onSwitchInstitution,
   roles,
   loggingOut,
   onLogout,
   children,
 }: AppShellProps) {
-  const [theme, setTheme] = useState<Theme>(
-    getInitialTheme,
-  );
+  const canSwitchInstitution =
+    institutions.length > 1 && activeInstitutionId !== undefined && onSwitchInstitution !== undefined;
+  const { theme } = useAppearance();
+  const upcomingTheme = nextTheme(theme);
+  const themeButtonLabel = `Cambiar a base ${THEME_ADJECTIVES[upcomingTheme]}`;
+  const roleLabel = primaryRoleLabel(roles);
 
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    window.localStorage.setItem('vmat-theme', theme);
-  }, [theme]);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const mainRef = useRef<HTMLElement>(null);
+  // Última sección mostrada: el foco solo se mueve si la sección cambia de verdad.
+  const shownPage = useRef(activePage);
 
-  function toggleTheme() {
-    setTheme(current =>
-      current === 'light' ? 'dark' : 'light',
-    );
+  function navigate(page: AdminPage) {
+    setMenuOpen(false);
+    onNavigate(page);
   }
 
-  const primaryRole = roles.includes('ADMIN')
-    ? 'Administrador'
-    : roles.includes('TEACHER')
-      ? 'Profesor'
-      : roles.includes('STUDENT')
-        ? 'Estudiante'
-        : 'Sin rol';
+  function closeMenu() {
+    setMenuOpen(false);
+    menuButtonRef.current?.focus();
+  }
+
+  // Título de la pestaña y foco en el contenido al cambiar de sección,
+  // para que el lector de pantalla anuncie la página nueva.
+  useEffect(() => {
+    document.title = pageTitle(activePage);
+    if (shownPage.current === activePage) return;
+    shownPage.current = activePage;
+    mainRef.current?.focus({ preventScroll: true });
+    window.scrollTo({ top: 0 });
+  }, [activePage]);
+
+  // Menú móvil abierto: foco adentro, Escape lo cierra y la página no se desplaza.
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    closeButtonRef.current?.focus();
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') closeMenu();
+    }
+
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [menuOpen]);
+
+  // Atajo "/" para ir al buscador, salvo cuando se está escribiendo.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== '/' || event.ctrlKey || event.metaKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return;
+      event.preventDefault();
+      // En escritorio el buscador ya está visible: foco inmediato, para no
+      // perder la primera letra si la persona escribe rápido.
+      if (window.matchMedia('(max-width: 760px)').matches) {
+        setMenuOpen(true);
+        window.setTimeout(() => searchRef.current?.focus(), 0);
+      } else {
+        searchRef.current?.focus();
+      }
+    }
+
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   return (
-    <div className="vmat-shell">
-      <aside className="vmat-sidebar">
-        <div className="vmat-brand">
-          <div className="vmat-logo">W</div>
+    <div className="vmat-shell" data-menu-open={menuOpen || undefined}>
+      <a className="skip-link" href="#contenido-principal">
+        Saltar al contenido
+      </a>
 
-          <div>
+      <aside id="menu-principal" className="vmat-sidebar" aria-label="Menú principal">
+        <div className="vmat-brand">
+          <div className="vmat-logo" aria-hidden="true">
+            W
+          </div>
+          <div className="vmat-brand-text">
             <strong>WebClass</strong>
             <span>Classroom</span>
           </div>
+          <button
+            ref={closeButtonRef}
+            type="button"
+            className="vmat-menu-close"
+            aria-label="Cerrar menú"
+            onClick={closeMenu}
+          >
+            <CloseIcon />
+          </button>
         </div>
 
-        <nav className="vmat-nav" aria-label="Navegación principal">
-          {navItems.map(item => (
-            <button
-              key={item.id}
-              type="button"
-              className={
-                activePage === item.id
-                  ? 'vmat-nav-item active'
-                  : 'vmat-nav-item'
-              }
-              onClick={() => onNavigate(item.id)}
-            >
-              <span className="vmat-nav-icon">{item.icon}</span>
-              <span>{item.label}</span>
-            </button>
-          ))}
+        <SectionSearch ref={searchRef} sections={SECTIONS} onNavigate={navigate} />
+
+        <nav className="vmat-nav" aria-label="Secciones">
+          {GROUPS.map(group => {
+            const items = SECTIONS.filter(section => section.group === group);
+            return (
+              <div key={group} className="vmat-nav-section">
+                <h2 className="vmat-nav-group" id={`grupo-${group}`}>
+                  {GROUP_LABELS[group]}
+                </h2>
+                <ul aria-labelledby={`grupo-${group}`}>
+                  {items.map(section => (
+                    <li key={section.id}>
+                      <NavButton
+                        section={section}
+                        active={activePage === section.id}
+                        onNavigate={navigate}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
         </nav>
 
         <div className="vmat-sidebar-bottom">
           <div className="sidebar-institution">
-            <span>INSTITUCIÓN</span>
-            <strong>{institutionName}</strong>
-          </div>
-
-          <div className="sidebar-user">
-            {avatarUrl ? (
-              <img src={avatarUrl} alt="" />
+            {canSwitchInstitution ? (
+              <>
+                <label htmlFor="institucion-activa">Institución</label>
+                <span className="institution-switch">
+                  <select
+                    id="institucion-activa"
+                    className="institution-select"
+                    value={activeInstitutionId}
+                    onChange={event => onSwitchInstitution(event.target.value)}
+                  >
+                    {institutions.map(item => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDownIcon />
+                </span>
+              </>
             ) : (
-              <div className="sidebar-avatar">
-                {githubLogin.charAt(0).toUpperCase()}
-              </div>
+              <>
+                <span>Institución</span>
+                <strong title={institutionName}>{institutionName}</strong>
+              </>
             )}
-
-            <div className="sidebar-user-copy">
-              <strong>{githubLogin}</strong>
-              <span>{primaryRole}</span>
-            </div>
           </div>
         </div>
       </aside>
 
+      <div className="vmat-scrim" aria-hidden="true" onClick={closeMenu} />
+
       <div className="vmat-workspace">
         <header className="vmat-topbar">
-          <div className="topbar-context">
-            <span>WebClass</span>
-            <strong>{institutionName}</strong>
-          </div>
+          <button
+            ref={menuButtonRef}
+            type="button"
+            className="vmat-menu-toggle"
+            aria-label="Abrir menú"
+            aria-controls="menu-principal"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen(true)}
+          >
+            <MenuIcon />
+          </button>
+
+          <Breadcrumbs page={activePage} institutionName={institutionName} onNavigate={navigate} />
 
           <div className="topbar-actions">
             <button
               type="button"
               className="theme-toggle"
-              onClick={toggleTheme}
-              aria-label={
-                theme === 'light'
-                  ? 'Activar modo oscuro'
-                  : 'Activar modo claro'
-              }
-              title={
-                theme === 'light'
-                  ? 'Modo oscuro'
-                  : 'Modo claro'
-              }
+              onClick={() => setAppearance({ theme: upcomingTheme })}
+              aria-label={themeButtonLabel}
+              title={themeButtonLabel}
             >
-              <ThemeIcon theme={theme} />
+              <ThemeIcon theme={upcomingTheme} />
             </button>
 
-            <div className="topbar-role">
-              <span className="role-dot" />
-              {primaryRole}
-            </div>
-
-            <div className="topbar-profile">
-              {avatarUrl ? (
-                <img src={avatarUrl} alt="" />
-              ) : (
-                <div className="topbar-avatar">
-                  {githubLogin.charAt(0).toUpperCase()}
-                </div>
-              )}
-
-              <div>
-                <strong>{githubLogin}</strong>
-                <span>GitHub conectado</span>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              className="topbar-logout"
-              onClick={onLogout}
-              disabled={loggingOut}
-            >
-              {loggingOut ? 'Cerrando…' : 'Salir'}
-            </button>
+            <ProfileMenu
+              githubLogin={githubLogin}
+              avatarUrl={avatarUrl}
+              roleLabel={roleLabel}
+              institutionName={institutionName}
+              loggingOut={loggingOut}
+              onOpenProfile={() => navigate('profile')}
+              onOpenAppearance={() => navigate('appearance')}
+              onLogout={onLogout}
+            />
           </div>
         </header>
 
-        <main className="vmat-content">{children}</main>
+        <main id="contenido-principal" className="vmat-content" ref={mainRef} tabIndex={-1}>
+          {children}
+        </main>
       </div>
     </div>
   );
