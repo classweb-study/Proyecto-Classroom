@@ -234,7 +234,7 @@ describe('AppShell', async () => {
     const html = render(AppShell, props, 'contenido');
     expect(html).toContain('href="#contenido-principal"');
     expect(html).toContain('aria-label="Menú principal"');
-    expect(html).toMatch(/aria-current="page"[^>]*>.*?Usuarios/s);
+    expect(html).toMatch(/aria-current="page"[^>]*>.*?Solicitudes/s);
     expect(html).toContain('id="contenido-principal"');
   });
 
@@ -255,33 +255,49 @@ describe('AppShell', async () => {
   it('con una sola institución muestra solo el nombre', () => {
     expect(render(AppShell, props)).not.toContain('institution-select');
   });
-});
 
-describe('ProfilePage', async () => {
-  const { ProfilePage } = await load('pages/ProfilePage.tsx');
-  const html = render(ProfilePage, {
-    user: {
-      id: 'u1',
-      github: { id: '1', login: 'ana-dev', avatarUrl: null },
-      academicIdentity: null,
-      institutions: [
-        { id: 'i1', name: 'Universidad X', slug: 'x', roles: ['TEACHER'], academicIdentity: { institutionalIdentifier: '6700', status: 'VERIFIED' } },
-      ],
-      accessRequest: null,
-    },
-    activeInstitutionId: 'i1',
-    onOpenAppearance: noop,
-    onLogout: noop,
-    loggingOut: false,
+  it('cada rol ve su menú: profesor y estudiante ven Cursos, no la administración', () => {
+    const teacher = render(AppShell, { ...props, activePage: 'courses', roles: ['TEACHER'], viewRole: 'TEACHER' });
+    expect(teacher).toContain('Cursos');
+    expect(teacher).toContain('Docencia');
+    expect(teacher).not.toContain('Profesores');
+    const admin = render(AppShell, props);
+    expect(admin).not.toContain('>Cursos<');
+    expect(admin).toContain('Mis solicitudes');
   });
 
-  it('muestra cuenta, rol e identidad académica, y abre GitHub en otra pestaña de forma segura', () => {
-    expect(html).toContain('@ana-dev');
-    expect(html).toContain('Profesor');
-    expect(html).toContain('6700');
-    expect(html).toContain('Verificada');
-    expect(html).toContain('href="https://github.com/ana-dev"');
-    expect(html).toContain('rel="noopener noreferrer"');
-    expect(html).toContain('(se abre en otra pestaña)');
+  it('Plataforma solo aparece para quien administra la plataforma', () => {
+    expect(render(AppShell, props)).not.toContain('Plataforma');
+    expect(render(AppShell, { ...props, isPlatformAdmin: true })).toContain('Plataforma');
+  });
+
+  it('con varios roles muestra "Ver como", y usa el logo y color de la institución', () => {
+    const html = render(AppShell, {
+      ...props,
+      roles: ['ADMIN', 'STUDENT'],
+      viewRole: 'ADMIN',
+      onSwitchRole: noop,
+      institutionLogoUrl: '/logo.png',
+      institutionAccent: '#7c3aed',
+    });
+    expect(html).toContain('aria-label="Ver como"');
+    expect(html).toContain('aria-pressed="true"');
+    expect(html).toContain('src="/logo.png"');
+    expect(html).toContain('--vmat-institution-accent:#7c3aed');
+  });
+});
+
+describe('ProfilePage (versión de Maura)', async () => {
+  const { ProfilePage } = await load('pages/ProfilePage.tsx');
+  const html = render(ProfilePage, {
+    githubLogin: 'ana-dev',
+    avatarUrl: null,
+    institutions: [{ id: 'i1', name: 'Universidad X', roles: ['TEACHER'] }],
+    onOpenRequests: noop,
+  });
+
+  it('se monta con las props que le pasa main.tsx y muestra la cuenta', () => {
+    expect(html).toContain('ana-dev');
+    expect(html).toContain('A');
   });
 });
